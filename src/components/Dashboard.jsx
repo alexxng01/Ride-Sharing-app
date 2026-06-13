@@ -1,8 +1,8 @@
 // src/components/Dashboard.jsx
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-  Car, Navigation, Truck, Clock, LogOut, Activity, 
+import {
+  Car, Navigation, Truck, Clock, LogOut, Activity,
   ChevronRight, Home, User, Star, Wallet, Menu, X,
   Bell, Search, Settings, HelpCircle, Award, Zap,
   Bike, Package, Coffee, ShoppingBag, Map, MapPin, Eye, EyeOff,
@@ -112,7 +112,10 @@ function SpotlightCard({ title, subtitle, bgColor }) {
 function SwitchHint({ role, onSwitch }) {
   const other = role === "rider" ? "driver" : "rider";
   const OtherIcon = role === "rider" ? Truck : Navigation;
-  const color = role === "rider" ? "text-blue-400 border-blue-500/30 hover:bg-blue-500/10" : "text-brand-400 border-brand-500/30 hover:bg-brand-500/10";
+  const color =
+    role === "rider"
+      ? "text-blue-400 border-blue-500/30 hover:bg-blue-500/10"
+      : "text-brand-400 border-brand-500/30 hover:bg-brand-500/10";
 
   return (
     <motion.button
@@ -140,7 +143,7 @@ function RideStatusBar({ ride }) {
       initial={{ height: 0, opacity: 0 }}
       animate={{ height: "auto", opacity: 1 }}
       exit={{ height: 0, opacity: 0 }}
-      className="bg-brand-500/10 border-b border-brand-500/20 px-4 py-2 flex items-center gap-3 text-xs"
+      className="bg-brand-500/10 border-b border-brand-500/20 px-4 py-2 flex items-center gap-3 text-xs flex-shrink-0"
     >
       <Activity size={12} className="text-brand-400 animate-pulse" />
       <span className="text-brand-300 font-medium">Live Ride Active</span>
@@ -156,7 +159,7 @@ function RideStatusBar({ ride }) {
   );
 }
 
-// ── Scroll to Top/Bottom Button Component ─────────────────────────────────────
+// ── Scroll Buttons ────────────────────────────────────────────────────
 function ScrollButtons({ containerRef, color = "brand" }) {
   const [showTop, setShowTop] = useState(false);
   const [showBottom, setShowBottom] = useState(false);
@@ -172,25 +175,22 @@ function ScrollButtons({ containerRef, color = "brand" }) {
   useEffect(() => {
     const container = containerRef.current;
     if (container) {
-      container.addEventListener('scroll', checkScroll);
+      container.addEventListener("scroll", checkScroll);
       checkScroll();
-      return () => container.removeEventListener('scroll', checkScroll);
+      return () => container.removeEventListener("scroll", checkScroll);
     }
   }, []);
 
-  const scrollToTop = () => {
-    if (containerRef.current) {
-      containerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  };
+  const scrollToTop = () => containerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  const scrollToBottom = () =>
+    containerRef.current?.scrollTo({ top: containerRef.current.scrollHeight, behavior: "smooth" });
 
-  const scrollToBottom = () => {
-    if (containerRef.current) {
-      containerRef.current.scrollTo({ top: containerRef.current.scrollHeight, behavior: 'smooth' });
-    }
-  };
-
-  const bgColor = color === "brand" ? "bg-brand-500/80 hover:bg-brand-500" : color === "blue" ? "bg-blue-500/80 hover:bg-blue-500" : "bg-purple-500/80 hover:bg-purple-500";
+  const bgColor =
+    color === "brand"
+      ? "bg-brand-500/80 hover:bg-brand-500"
+      : color === "blue"
+      ? "bg-blue-500/80 hover:bg-blue-500"
+      : "bg-purple-500/80 hover:bg-purple-500";
 
   return (
     <div className="absolute right-2 bottom-20 flex flex-col gap-2 z-10">
@@ -229,77 +229,58 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState("home");
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showMap, setShowMap] = useState(false);
-  
-  const homeScrollRef = useRef(null);
-  const riderScrollRef = useRef(null);
-  const driverScrollRef = useRef(null);
+
+  const homeScrollRef    = useRef(null);
+  const riderScrollRef   = useRef(null);
+  const driverScrollRef  = useRef(null);
   const historyScrollRef = useRef(null);
-  const mapScrollRef = useRef(null);
 
-  // Navigation functions
-  const navigateToHome = () => {
-    setActiveTab("home");
-    setShowMobileMenu(false);
-  };
-
-  const navigateToRider = () => {
-    setActiveTab("rider");
-    setShowMobileMenu(false);
-  };
-
-  const navigateToDriver = () => {
-    setActiveTab("driver");
-    setShowMobileMenu(false);
-  };
-
-  const navigateToHistory = () => {
-    setActiveTab("history");
-    setShowMobileMenu(false);
-  };
-
-  const navigateToMap = () => {
-    setActiveTab("map");
-    setShowMobileMenu(false);
-  };
-
-  const toggleMapVisibility = () => {
-    setShowMap(!showMap);
-  };
+  const navigateToHome    = () => { setActiveTab("home");    setShowMobileMenu(false); };
+  const navigateToRider   = () => { setActiveTab("rider");   setShowMobileMenu(false); };
+  const navigateToDriver  = () => { setActiveTab("driver");  setShowMobileMenu(false); };
+  const navigateToHistory = () => { setActiveTab("history"); setShowMobileMenu(false); };
+  const navigateToMap     = () => { setActiveTab("map");     setShowMobileMenu(false); };
+  const toggleMapVisibility = () => setShowMap((v) => !v);
 
   const services = [
-    { icon: Bike, title: "Bike", subtitle: "Fast, safe, and always available", badge: "LESS FARE", color: "brand", action: navigateToRider },
-    { icon: Car, title: "Car", subtitle: "Find the right car anytime!", badge: "LESS FARE", color: "blue", action: navigateToRider },
-    { icon: Coffee, title: "Food", subtitle: "Order from the best nearby restaurants", badge: null, color: "green", action: navigateToRider },
-    { icon: Package, title: "Parcel", subtitle: "Instant delivery within the city", badge: null, color: "purple", action: navigateToRider },
-    { icon: ShoppingBag, title: "Bazaar", subtitle: "Shop essentials", badge: null, color: "pink", action: navigateToRider },
+    { icon: Bike,        title: "Bike",    subtitle: "Fast, safe, and always available",          badge: "LESS FARE", color: "brand",  action: navigateToRider },
+    { icon: Car,         title: "Car",     subtitle: "Find the right car anytime!",               badge: "LESS FARE", color: "blue",   action: navigateToRider },
+    { icon: Coffee,      title: "Food",    subtitle: "Order from the best nearby restaurants",    badge: null,        color: "green",  action: navigateToRider },
+    { icon: Package,     title: "Parcel",  subtitle: "Instant delivery within the city",          badge: null,        color: "purple", action: navigateToRider },
+    { icon: ShoppingBag, title: "Bazaar",  subtitle: "Shop essentials",                           badge: null,        color: "pink",   action: navigateToRider },
   ];
 
   const quickActions = [
-    { icon: Home, label: "Ride to Home", action: navigateToRider },
-    { icon: Star, label: "Saved Places", action: () => {} },
-    { icon: Wallet, label: "Wallet", action: () => {} },
-    { icon: Zap, label: "Promos", action: () => {} },
+    { icon: Home,   label: "Ride to Home",  action: navigateToRider },
+    { icon: Star,   label: "Saved Places",  action: () => {} },
+    { icon: Wallet, label: "Wallet",        action: () => {} },
+    { icon: Zap,    label: "Promos",        action: () => {} },
   ];
 
   const spotlights = [
-    { title: "Namlo Spotlight", subtitle: "Go Places with Namlo Rental", bgColor: "from-purple-600 to-pink-600" },
-    { title: "Summer Sale", subtitle: "Sweet summer escape.", bgColor: "from-yellow-600 to-orange-600" },
-    { title: "Resort Plans?", subtitle: "Rental First! Pre-book & get discount.", bgColor: "from-green-600 to-teal-600" },
+    { title: "Namlo Spotlight", subtitle: "Go Places with Namlo Rental",            bgColor: "from-purple-600 to-pink-600" },
+    { title: "Summer Sale",     subtitle: "Sweet summer escape.",                    bgColor: "from-yellow-600 to-orange-600" },
+    { title: "Resort Plans?",   subtitle: "Rental First! Pre-book & get discount.", bgColor: "from-green-600 to-teal-600" },
   ];
 
+  // Whether to show the inline map panel beside the sidebar
+  const showMapInSidebar = showMap && (activeTab === "rider" || activeTab === "driver");
+
+  // ── Panel content (sidebar panels only — NOT for map tab) ───────────
   const PanelContent = () => {
     if (activeTab === "home") {
       return (
         <div className="relative h-full">
-          <div 
+          <div
             ref={homeScrollRef}
-            className="h-full overflow-y-auto scrollbar-hide space-y-4 pb-4"
-            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+            className="h-full overflow-y-auto scrollbar-hide space-y-4 pb-4 px-4 pt-4"
+            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
           >
             <div className="flex-shrink-0 mb-2">
               <p className="text-dark-400 text-sm">Welcome back,</p>
               <p className="text-white font-bold text-xl">{user?.name || "Guest"}</p>
             </div>
+
             <div>
               <h2 className="text-white font-bold text-lg mb-3">Services</h2>
               <div className="grid grid-cols-2 gap-3">
@@ -308,6 +289,7 @@ export default function Dashboard() {
                 ))}
               </div>
             </div>
+
             <div className="bg-gradient-to-r from-red-600/20 to-orange-600/20 border border-red-500/30 rounded-2xl p-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -317,6 +299,7 @@ export default function Dashboard() {
                 <ChevronRight size={14} className="text-dark-400" />
               </div>
             </div>
+
             <div>
               <h2 className="text-white font-bold text-lg mb-3">QUICK ACTIONS</h2>
               <div className="flex justify-around">
@@ -325,7 +308,9 @@ export default function Dashboard() {
                 ))}
               </div>
             </div>
+
             <PointsCard />
+
             <div>
               <h2 className="text-white font-bold text-lg mb-3">Namlo Spotlight</h2>
               <div className="overflow-x-auto flex gap-3 pb-2 scrollbar-hide">
@@ -334,6 +319,7 @@ export default function Dashboard() {
                 ))}
               </div>
             </div>
+
             <div className="mt-2 pb-4">
               <motion.button
                 whileHover={{ scale: 1.02 }}
@@ -364,13 +350,13 @@ export default function Dashboard() {
     if (activeTab === "rider") {
       return (
         <div className="relative h-full">
-          <div 
+          <div
             ref={riderScrollRef}
-            className="h-full overflow-y-auto scrollbar-hide"
-            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+            className="h-full overflow-y-auto scrollbar-hide px-4 pt-4"
+            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
           >
             <RiderPanel />
-            <div className="mt-4">
+            <div className="mt-4 pb-4">
               <SwitchHint role="rider" onSwitch={navigateToDriver} />
             </div>
           </div>
@@ -382,13 +368,13 @@ export default function Dashboard() {
     if (activeTab === "driver") {
       return (
         <div className="relative h-full">
-          <div 
+          <div
             ref={driverScrollRef}
-            className="h-full overflow-y-auto scrollbar-hide"
-            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+            className="h-full overflow-y-auto scrollbar-hide px-4 pt-4"
+            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
           >
             <DriverPanel />
-            <div className="mt-4">
+            <div className="mt-4 pb-4">
               <SwitchHint role="driver" onSwitch={navigateToRider} />
             </div>
           </div>
@@ -400,10 +386,10 @@ export default function Dashboard() {
     if (activeTab === "history") {
       return (
         <div className="relative h-full">
-          <div 
+          <div
             ref={historyScrollRef}
-            className="h-full overflow-y-auto scrollbar-hide"
-            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+            className="h-full overflow-y-auto scrollbar-hide px-4 pt-4"
+            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
           >
             <HistoryPanel />
           </div>
@@ -412,34 +398,12 @@ export default function Dashboard() {
       );
     }
 
-    if (activeTab === "map") {
-      return (
-        <div className="relative h-full">
-          <div 
-            ref={mapScrollRef}
-            className="h-full overflow-y-auto scrollbar-hide"
-            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-          >
-            <div className="mb-4">
-              <h2 className="text-white font-bold text-lg mb-2">Full Screen Map</h2>
-              <p className="text-dark-400 text-xs">Click on map to select pickup/dropoff locations</p>
-            </div>
-            <div className="h-[600px] w-full rounded-2xl overflow-hidden">
-              <RideMap onLocationSelect={handleMapLocationClick} selectionMode={mapSelectionMode} />
-            </div>
-          </div>
-        </div>
-      );
-    }
-
     return null;
   };
 
-  // Determine if map should be visible in sidebar (only for Rider/Driver tabs and when showMap is true)
-  const showMapInSidebar = showMap && (activeTab === "rider" || activeTab === "driver");
-
   return (
-    <div className="min-h-screen bg-dark-950 text-white flex flex-col">
+    // Root: full-viewport column, nothing overflows
+    <div className="h-screen bg-dark-950 text-white flex flex-col overflow-hidden">
       <Toaster
         position="top-right"
         toastOptions={{
@@ -452,6 +416,7 @@ export default function Dashboard() {
         }}
       />
 
+      {/* ── Header ───────────────────────────────────────────────── */}
       <header className="bg-dark-900/80 backdrop-blur-xl border-b border-dark-800 px-4 py-3 flex items-center justify-between flex-shrink-0 z-10">
         <div className="flex items-center gap-3">
           <button
@@ -472,103 +437,220 @@ export default function Dashboard() {
         </div>
 
         <div className="hidden lg:flex items-center gap-1 bg-dark-800/50 rounded-xl p-1">
-          <button onClick={navigateToHome} className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === "home" ? "bg-brand-500 text-white" : "text-dark-400 hover:text-white"}`}><Home size={14} /> Home</button>
-          <button onClick={navigateToRider} className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === "rider" ? "bg-brand-500 text-white" : "text-dark-400 hover:text-white"}`}><Navigation size={14} /> Ride</button>
-          <button onClick={navigateToDriver} className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === "driver" ? "bg-blue-500 text-white" : "text-dark-400 hover:text-white"}`}><Truck size={14} /> Drive</button>
-          <button onClick={navigateToMap} className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === "map" ? "bg-green-500 text-white" : "text-dark-400 hover:text-white"}`}><Map size={14} /> Map</button>
-          <button onClick={navigateToHistory} className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === "history" ? "bg-purple-500 text-white" : "text-dark-400 hover:text-white"}`}><Clock size={14} /> History</button>
+          {[
+            { key: "home",    label: "Home",    Icon: Home,       color: "bg-brand-500" },
+            { key: "rider",   label: "Ride",    Icon: Navigation, color: "bg-brand-500" },
+            { key: "driver",  label: "Drive",   Icon: Truck,      color: "bg-blue-500"  },
+            { key: "map",     label: "Map",     Icon: Map,        color: "bg-green-500" },
+            { key: "history", label: "History", Icon: Clock,      color: "bg-purple-500"},
+          ].map(({ key, label, Icon, color }) => (
+            <button
+              key={key}
+              onClick={() => setActiveTab(key)}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+                activeTab === key ? `${color} text-white` : "text-dark-400 hover:text-white"
+              }`}
+            >
+              <Icon size={14} /> {label}
+            </button>
+          ))}
         </div>
 
         <div className="flex items-center gap-2">
           {(activeTab === "rider" || activeTab === "driver") && (
-            <button onClick={toggleMapVisibility} className="flex w-8 h-8 bg-dark-800 rounded-lg items-center justify-center border border-dark-700 hover:border-brand-500/50 transition-all" title={showMap ? "Hide Map" : "Show Map"}>
-              {showMap ? <EyeOff size={14} className="text-dark-400" /> : <Eye size={14} className="text-dark-400" />}
+            <button
+              onClick={toggleMapVisibility}
+              className="flex w-8 h-8 bg-dark-800 rounded-lg items-center justify-center border border-dark-700 hover:border-brand-500/50 transition-all"
+              title={showMap ? "Hide Map" : "Show Map"}
+            >
+              {showMap
+                ? <EyeOff size={14} className="text-dark-400" />
+                : <Eye    size={14} className="text-dark-400" />}
             </button>
           )}
-          <button className="w-8 h-8 bg-dark-800 rounded-lg flex items-center justify-center border border-dark-700"><Bell size={14} className="text-dark-400" /></button>
+          <button className="w-8 h-8 bg-dark-800 rounded-lg flex items-center justify-center border border-dark-700">
+            <Bell size={14} className="text-dark-400" />
+          </button>
           <div className="flex items-center gap-2 ml-2">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-500 to-orange-600 flex items-center justify-center text-xs font-bold shadow-lg">{user?.name?.[0] || "N"}</div>
-            <button onClick={logout} className="w-8 h-8 bg-dark-800 rounded-lg flex items-center justify-center text-dark-400 hover:text-white hover:bg-dark-700 transition-all border border-dark-700"><LogOut size={14} /></button>
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-500 to-orange-600 flex items-center justify-center text-xs font-bold shadow-lg">
+              {user?.name?.[0] || "N"}
+            </div>
+            <button
+              onClick={logout}
+              className="w-8 h-8 bg-dark-800 rounded-lg flex items-center justify-center text-dark-400 hover:text-white hover:bg-dark-700 transition-all border border-dark-700"
+            >
+              <LogOut size={14} />
+            </button>
           </div>
         </div>
       </header>
 
+      {/* ── Ride status bar ──────────────────────────────────────── */}
+      <AnimatePresence>{ride && <RideStatusBar ride={ride} />}</AnimatePresence>
+
+      {/* ── Mobile slide-in menu ─────────────────────────────────── */}
       <AnimatePresence>
         {showMobileMenu && (
-          <motion.div initial={{ x: -280 }} animate={{ x: 0 }} exit={{ x: -280 }} className="fixed inset-y-0 left-0 z-50 w-64 bg-dark-900 border-r border-dark-800 shadow-2xl lg:hidden">
+          <motion.div
+            initial={{ x: -280 }}
+            animate={{ x: 0 }}
+            exit={{ x: -280 }}
+            className="fixed inset-y-0 left-0 z-50 w-64 bg-dark-900 border-r border-dark-800 shadow-2xl lg:hidden"
+          >
             <div className="p-4 space-y-4">
-              <div className="flex items-center justify-between mb-6"><div className="flex items-center gap-2"><Car size={20} className="text-brand-500" /><span className="font-bold text-white">Menu</span></div><button onClick={() => setShowMobileMenu(false)}><X size={18} className="text-dark-400" /></button></div>
-              <button onClick={navigateToHome} className="w-full text-left px-3 py-2 rounded-lg text-dark-300 hover:bg-dark-800 transition-colors flex items-center gap-2"><Home size={16} /> Home</button>
-              <button onClick={navigateToRider} className="w-full text-left px-3 py-2 rounded-lg text-dark-300 hover:bg-dark-800 transition-colors flex items-center gap-2"><Navigation size={16} /> Ride</button>
-              <button onClick={navigateToDriver} className="w-full text-left px-3 py-2 rounded-lg text-dark-300 hover:bg-dark-800 transition-colors flex items-center gap-2"><Truck size={16} /> Drive</button>
-              <button onClick={navigateToMap} className="w-full text-left px-3 py-2 rounded-lg text-dark-300 hover:bg-dark-800 transition-colors flex items-center gap-2"><Map size={16} /> Map</button>
-              <button onClick={navigateToHistory} className="w-full text-left px-3 py-2 rounded-lg text-dark-300 hover:bg-dark-800 transition-colors flex items-center gap-2"><Clock size={16} /> History</button>
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2">
+                  <Car size={20} className="text-brand-500" />
+                  <span className="font-bold text-white">Menu</span>
+                </div>
+                <button onClick={() => setShowMobileMenu(false)}>
+                  <X size={18} className="text-dark-400" />
+                </button>
+              </div>
+              {[
+                { label: "Home",    Icon: Home,       action: navigateToHome },
+                { label: "Ride",    Icon: Navigation, action: navigateToRider },
+                { label: "Drive",   Icon: Truck,      action: navigateToDriver },
+                { label: "Map",     Icon: Map,        action: navigateToMap },
+                { label: "History", Icon: Clock,      action: navigateToHistory },
+              ].map(({ label, Icon, action }) => (
+                <button
+                  key={label}
+                  onClick={action}
+                  className="w-full text-left px-3 py-2 rounded-lg text-dark-300 hover:bg-dark-800 transition-colors flex items-center gap-2"
+                >
+                  <Icon size={16} /> {label}
+                </button>
+              ))}
               <div className="pt-4 border-t border-dark-800">
-                <button className="w-full text-left px-3 py-2 rounded-lg text-dark-400 hover:bg-dark-800 transition-colors flex items-center gap-2"><Settings size={14} /> Settings</button>
-                <button className="w-full text-left px-3 py-2 rounded-lg text-dark-400 hover:bg-dark-800 transition-colors flex items-center gap-2"><HelpCircle size={14} /> Help</button>
+                <button className="w-full text-left px-3 py-2 rounded-lg text-dark-400 hover:bg-dark-800 transition-colors flex items-center gap-2">
+                  <Settings size={14} /> Settings
+                </button>
+                <button className="w-full text-left px-3 py-2 rounded-lg text-dark-400 hover:bg-dark-800 transition-colors flex items-center gap-2">
+                  <HelpCircle size={14} /> Help
+                </button>
               </div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <AnimatePresence>{ride && <RideStatusBar ride={ride} />}</AnimatePresence>
+      {/* ── Main body: flex-1, no overflow on itself ─────────────── */}
+      <div className="flex flex-1 overflow-hidden p-4 gap-4">
 
-      {/* Main Content Layout */}
-      <div className="flex flex-1 overflow-hidden p-4">
-        {/* Desktop Sidebar - Shows panel content (no map inside) */}
+        {/* ── DESKTOP: Map tab — full-area map, no sidebar ─────────── */}
+        {activeTab === "map" && (
+          <div className="hidden lg:flex flex-1 overflow-hidden rounded-2xl bg-dark-900/60 border border-dark-800">
+            {/*
+              The map fills this container completely.
+              We remove the fixed h-[600px] wrapper — RideMap must
+              accept 100% width/height from its parent.
+            */}
+            <div className="flex flex-col flex-1 overflow-hidden p-4">
+              <div className="flex-shrink-0 mb-3">
+                <h2 className="text-white font-bold text-lg">Full Screen Map</h2>
+                <p className="text-dark-400 text-xs">Click on map to select pickup/dropoff locations</p>
+              </div>
+              {/* This div grows to fill all remaining space */}
+              <div className="flex-1 min-h-0 rounded-2xl overflow-hidden">
+                <RideMap
+                  onLocationSelect={handleMapLocationClick}
+                  selectionMode={mapSelectionMode}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── DESKTOP: non-map tabs — sidebar + optional map panel ── */}
         {activeTab !== "map" && (
-          <div className={`${showMapInSidebar ? 'lg:w-[400px] xl:w-[450px]' : 'lg:w-full'} flex-shrink-0 flex-col bg-dark-900/60 border-r border-dark-800 transition-all duration-300 hidden lg:flex rounded-2xl overflow-hidden`}>
+          <>
+            {/* Sidebar panel */}
+            <div
+              className={`
+                hidden lg:flex flex-col
+                bg-dark-900/60 border border-dark-800 rounded-2xl overflow-hidden flex-shrink-0
+                transition-all duration-300
+                ${showMapInSidebar ? "w-[380px] xl:w-[420px]" : "w-full"}
+              `}
+            >
+              <div className="flex-1 overflow-hidden">
+                <PanelContent />
+              </div>
+            </div>
+
+            {/* Inline map panel (shown when eye icon toggled on rider/driver tab) */}
+            {showMapInSidebar && (
+              <div className="hidden lg:flex flex-1 min-w-0 overflow-hidden rounded-2xl bg-dark-900/60 border border-dark-800">
+                <RideMap
+                  onLocationSelect={handleMapLocationClick}
+                  selectionMode={mapSelectionMode}
+                />
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ── MOBILE layout ─────────────────────────────────────── */}
+        <div className="lg:hidden flex-1 overflow-hidden flex flex-col rounded-2xl bg-dark-900/60 border border-dark-800 pb-16">
+          {activeTab === "map" ? (
+            // Mobile map tab: full-height map
+            <div className="flex flex-col flex-1 overflow-hidden p-3">
+              <div className="flex-shrink-0 mb-2">
+                <h2 className="text-white font-bold text-base">Full Screen Map</h2>
+                <p className="text-dark-400 text-xs">Click on map to select pickup/dropoff locations</p>
+              </div>
+              <div className="flex-1 min-h-0 rounded-xl overflow-hidden">
+                <RideMap
+                  onLocationSelect={handleMapLocationClick}
+                  selectionMode={mapSelectionMode}
+                />
+              </div>
+            </div>
+          ) : (activeTab === "rider" || activeTab === "driver") && showMap ? (
+            // Mobile rider/driver with map toggle on: panel on top, map strip below
+            <>
+              <div className="flex-1 overflow-hidden min-h-0">
+                <PanelContent />
+              </div>
+              <div className="h-64 flex-shrink-0 overflow-hidden border-t border-dark-800 p-3">
+                <div className="h-full rounded-xl overflow-hidden">
+                  <RideMap
+                    onLocationSelect={handleMapLocationClick}
+                    selectionMode={mapSelectionMode}
+                  />
+                </div>
+              </div>
+            </>
+          ) : (
+            // Mobile default: just the panel
             <div className="flex-1 overflow-hidden">
               <PanelContent />
             </div>
-          </div>
-        )}
-
-        {/* Desktop Map - Shows ONLY when activeTab is "map" */}
-        {activeTab === "map" && (
-          <div className="hidden lg:flex flex-1 overflow-hidden rounded-2xl bg-dark-900/60 border border-dark-800">
-            <PanelContent />
-          </div>
-        )}
-
-        {/* Desktop Map Toggle - Shows map beside panel when showMapInSidebar is true */}
-        {showMapInSidebar && activeTab !== "map" && (
-          <div className="hidden lg:block flex-1 overflow-hidden ml-4 rounded-2xl bg-dark-900/60 border border-dark-800 shadow-lg">
-            <RideMap onLocationSelect={handleMapLocationClick} selectionMode={mapSelectionMode} />
-          </div>
-        )}
-
-        {/* Mobile Layout */}
-        <div className="lg:hidden flex-1 overflow-hidden flex flex-col rounded-2xl bg-dark-900/60 border border-dark-800">
-          {activeTab === "map" ? (
-            <div className="flex-1 overflow-hidden p-3">
-              <RideMap onLocationSelect={handleMapLocationClick} selectionMode={mapSelectionMode} />
-            </div>
-          ) : activeTab === "rider" || activeTab === "driver" ? (
-            showMap ? (
-              <>
-                <div className="flex-1 overflow-hidden"><PanelContent /></div>
-                <div className="h-64 flex-shrink-0 p-3 overflow-hidden border-t border-dark-800">
-                  <RideMap onLocationSelect={handleMapLocationClick} selectionMode={mapSelectionMode} />
-                </div>
-              </>
-            ) : (
-              <div className="flex-1 overflow-hidden"><PanelContent /></div>
-            )
-          ) : (
-            <div className="flex-1 overflow-hidden"><PanelContent /></div>
           )}
         </div>
       </div>
 
-      {/* Bottom Navigation (Mobile) */}
+      {/* ── Bottom Navigation (Mobile) ────────────────────────────── */}
       <div className="lg:hidden bg-dark-900/80 backdrop-blur-xl border-t border-dark-800 px-4 py-2 flex items-center justify-around fixed bottom-0 left-0 right-0 z-10">
-        <button onClick={navigateToHome} className={`flex flex-col items-center gap-1 py-1 px-3 rounded-lg transition-all ${activeTab === "home" ? "text-brand-500" : "text-dark-500"}`}><Home size={20} /><span className="text-[10px]">Home</span></button>
-        <button onClick={navigateToRider} className={`flex flex-col items-center gap-1 py-1 px-3 rounded-lg transition-all ${activeTab === "rider" ? "text-brand-500" : "text-dark-500"}`}><Navigation size={20} /><span className="text-[10px]">Ride</span></button>
-        <button onClick={navigateToDriver} className={`flex flex-col items-center gap-1 py-1 px-3 rounded-lg transition-all ${activeTab === "driver" ? "text-blue-500" : "text-dark-500"}`}><Truck size={20} /><span className="text-[10px]">Drive</span></button>
-        <button onClick={navigateToMap} className={`flex flex-col items-center gap-1 py-1 px-3 rounded-lg transition-all ${activeTab === "map" ? "text-green-500" : "text-dark-500"}`}><Map size={20} /><span className="text-[10px]">Map</span></button>
-        <button onClick={navigateToHistory} className={`flex flex-col items-center gap-1 py-1 px-3 rounded-lg transition-all ${activeTab === "history" ? "text-purple-500" : "text-dark-500"}`}><Clock size={20} /><span className="text-[10px]">History</span></button>
+        {[
+          { key: "home",    label: "Home",    Icon: Home,       color: "text-brand-500"  },
+          { key: "rider",   label: "Ride",    Icon: Navigation, color: "text-brand-500"  },
+          { key: "driver",  label: "Drive",   Icon: Truck,      color: "text-blue-500"   },
+          { key: "map",     label: "Map",     Icon: Map,        color: "text-green-500"  },
+          { key: "history", label: "History", Icon: Clock,      color: "text-purple-500" },
+        ].map(({ key, label, Icon, color }) => (
+          <button
+            key={key}
+            onClick={() => setActiveTab(key)}
+            className={`flex flex-col items-center gap-1 py-1 px-3 rounded-lg transition-all ${
+              activeTab === key ? color : "text-dark-500"
+            }`}
+          >
+            <Icon size={20} />
+            <span className="text-[10px]">{label}</span>
+          </button>
+        ))}
       </div>
     </div>
   );
