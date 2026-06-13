@@ -1,5 +1,5 @@
 // src/components/Map/RideMap.jsx
-import React, { useEffect, useRef, memo, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useRef, memo, useState, useCallback } from "react";
 import {
   MapContainer, TileLayer, Marker, Polyline,
   Popup, useMap, Circle, useMapEvents
@@ -10,6 +10,7 @@ import { KTM_CENTER, calcDistance } from "../../lib/rideStates";
 import { useRide } from "../../store/RideContext";
 import { RIDE_STATUS } from "../../lib/rideStates";
 
+// Fix default marker icons (CRA)
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png",
@@ -52,6 +53,7 @@ const getSafeCenter = () => {
   return toPos(KTM_CENTER) ?? FALLBACK_CENTER;
 };
 
+// ── Check if Leaflet map panes are fully initialized ─────────────────────────
 const isMapPanesReady = (map) => {
   if (!map) return false;
   try {
@@ -59,6 +61,7 @@ const isMapPanesReady = (map) => {
     if (!container) return false;
     const mapPane = map.getPane("mapPane");
     if (!mapPane) return false;
+    // The critical check: _leaflet_pos must exist on the map pane
     if (mapPane._leaflet_pos === undefined) return false;
     return true;
   } catch (e) {
@@ -66,6 +69,7 @@ const isMapPanesReady = (map) => {
   }
 };
 
+// ── Safe setView wrapper ──────────────────────────────────────────────────────
 const safeSetView = (map, center, zoom, options = {}) => {
   if (!map || !center || !isValidPos(center)) return;
   if (!isMapPanesReady(map)) return;
@@ -74,6 +78,12 @@ const safeSetView = (map, center, zoom, options = {}) => {
   } catch (e) {
     console.warn("safeSetView suppressed:", e.message);
   }
+};
+
+// ── Format helpers ────────────────────────────────────────────────────────────
+const fmtDist = (m) => {
+  if (!m && m !== 0) return "—";
+  return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
 };
 
 const fmtTime = (s) => {
@@ -111,7 +121,6 @@ const makeIcon = (color, emoji, size = 36) =>
     className:   "",
   });
 
-// FIX: Create icons once outside component — not on every render
 const riderIcon   = makeIcon("#f97316", "🧑");
 const driverIcon  = makeIcon("#3b82f6", "🚗");
 const dropoffIcon = makeIcon("#10b981", "🏁");
@@ -146,7 +155,7 @@ const MapClickHandler = memo(function MapClickHandler({ onLocationSelect, select
   return null;
 });
 
-// ── SafeMapController ─────────────────────────────────────────────────────────
+// ── SafeMapController — guards every setView call ────────────────────────────
 function SafeMapController({ center, zoom = 14, shouldCenter }) {
   const map = useMap();
   const lastCenterRef = useRef(null);
@@ -154,13 +163,18 @@ function SafeMapController({ center, zoom = 14, shouldCenter }) {
 
   const trySetView = useCallback(() => {
     if (!shouldCenter || !center || !isValidPos(center)) return;
+
+    // Skip if already at this center
     const prev = lastCenterRef.current;
     if (prev && prev[0] === center[0] && prev[1] === center[1]) return;
+
     if (!isMapPanesReady(map)) {
+      // Retry in 150 ms if panes aren't ready yet
       if (retryRef.current) clearTimeout(retryRef.current);
       retryRef.current = setTimeout(trySetView, 150);
       return;
     }
+
     safeSetView(map, center, zoom, { animate: false });
     lastCenterRef.current = center;
   }, [map, center, zoom, shouldCenter]);
@@ -168,44 +182,36 @@ function SafeMapController({ center, zoom = 14, shouldCenter }) {
   useEffect(() => {
     if (retryRef.current) clearTimeout(retryRef.current);
     trySetView();
-    return () => { if (retryRef.current) clearTimeout(retryRef.current); };
+    return () => {
+      if (retryRef.current) clearTimeout(retryRef.current);
+    };
   }, [trySetView]);
 
   return null;
 }
 
-// ── ETA Display Overlay — FIX: slower interval (1s not 100ms) ────────────────
-const ETADisplayOverlay = memo(function ETADisplayOverlay({ etaSeconds, distanceKm, phase, isLive }) {
+// ── ETA Display Overlay ───────────────────────────────────────────────────────
+function ETADisplayOverlay({ etaSeconds, distanceKm, phase, isLive }) {
   const [timeLeft, setTimeLeft] = useState(etaSeconds);
   const [progress, setProgress] = useState(0);
-  const startTimeRef = useRef(Date.now());
-  const initialRef = useRef(etaSeconds);
 
-  // FIX: reset refs when etaSeconds changes significantly (new ride phase)
-  useEffect(() => {
-    if (Math.abs(etaSeconds - initialRef.current) > 10) {
-      initialRef.current = etaSeconds;
-      startTimeRef.current = Date.now();
-      setTimeLeft(etaSeconds);
-      setProgress(0);
-    }
-  }, [etaSeconds]);
-
-  // FIX: interval every 1000ms instead of 100ms — reduces CPU by 10x
   useEffect(() => {
     if (!isLive || !etaSeconds || etaSeconds <= 0) return;
+    const startTime = Date.now();
+    const initialRemaining = etaSeconds;
     const interval = setInterval(() => {
-      const elapsed = (Date.now() - startTimeRef.current) / 1000;
-      const remaining = Math.max(0, initialRef.current - elapsed);
+      const elapsed = (Date.now() - startTime) / 1000;
+      const remaining = Math.max(0, initialRemaining - elapsed);
       setTimeLeft(remaining);
-      setProgress(Math.min(100, ((initialRef.current - remaining) / initialRef.current) * 100));
+      setProgress(Math.min(100, ((initialRemaining - remaining) / initialRemaining) * 100));
       if (remaining <= 0) clearInterval(interval);
-    }, 1000); // FIX: was 100ms
+    }, 100);
     return () => clearInterval(interval);
-  }, [isLive, etaSeconds]);
+  }, [etaSeconds, isLive]);
 
   const minutes = Math.floor(timeLeft / 60);
   const seconds = Math.floor(timeLeft % 60);
+
   const phaseIcon = phase === "to_pickup" ? "🚗" : phase === "to_dropoff" ? "🏁" : "📍";
   const phaseText = phase === "to_pickup" ? "TO PICKUP" : phase === "to_dropoff" ? "TO DROPOFF" : "DESTINATION";
 
@@ -227,25 +233,25 @@ const ETADisplayOverlay = memo(function ETADisplayOverlay({ etaSeconds, distance
         <div className="flex items-center justify-between mb-2">
           <div className="flex flex-col">
             <span className="text-white font-bold text-3xl leading-tight">
-              {minutes > 0 ? `${minutes}m ` : ""}{seconds > 0 ? `${seconds}s` : minutes > 0 ? "00s" : "Arriving"}
+              {minutes > 0 ? `${minutes}m ` : ''}{seconds > 0 ? `${seconds}s` : minutes > 0 ? '00s' : 'Arriving'}
             </span>
             {distanceKm && <span className="text-dark-400 text-xs mt-1">{distanceKm} to go</span>}
           </div>
           <div className="text-right">
             <span className="text-dark-500 text-[10px]">Est. arrival</span>
             <p className="text-white text-sm font-medium">
-              {new Date(Date.now() + timeLeft * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              {new Date(Date.now() + (timeLeft * 1000)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </p>
           </div>
         </div>
         <div className="w-full h-1.5 bg-dark-700 rounded-full overflow-hidden">
           <div
-            className="h-full rounded-full transition-all duration-1000"
+            className="h-full rounded-full transition-all duration-300"
             style={{
               width: `${progress}%`,
               background: phase === "to_pickup"
                 ? "linear-gradient(90deg,#3b82f6,#60a5fa)"
-                : "linear-gradient(90deg,#f97316,#fb923c)",
+                : "linear-gradient(90deg,#f97316,#fb923c)"
             }}
           />
         </div>
@@ -256,7 +262,7 @@ const ETADisplayOverlay = memo(function ETADisplayOverlay({ etaSeconds, distance
       </div>
     </div>
   );
-});
+}
 
 // ── Main component ────────────────────────────────────────────────────────────
 function RideMap({ onLocationSelect, selectionMode }) {
@@ -266,45 +272,38 @@ function RideMap({ onLocationSelect, selectionMode }) {
   const [currentDriverPos, setCurrentDriverPos] = useState(null);
   const [mapReady, setMapReady] = useState(false);
   const unsubscribeRef = useRef(null);
-  const lastDriverPosRef = useRef(null);
 
-  // FIX: Only update state if position actually changed — stops re-render loop
+  // Subscribe to real-time driver position
   useEffect(() => {
     if (!subscribeToPosition) return;
     unsubscribeRef.current = subscribeToPosition((position) => {
-      if (!position || isNaN(position.lat) || isNaN(position.lng)) return;
-      const prev = lastDriverPosRef.current;
-      if (prev && prev[0] === position.lat && prev[1] === position.lng) return;
-      const next = [position.lat, position.lng];
-      lastDriverPosRef.current = next;
-      setCurrentDriverPos(next);
+      if (position && !isNaN(position.lat) && !isNaN(position.lng)) {
+        setCurrentDriverPos([position.lat, position.lng]);
+      }
     });
     return () => { unsubscribeRef.current?.(); };
   }, [subscribeToPosition]);
 
-  // FIX: Memoize derived positions — prevents new array refs on every render
-  const validPickup = useMemo(() => toPos(ride?.pickup), [ride?.pickup]);
-  const validDropoff = useMemo(() => toPos(ride?.dropoff), [ride?.dropoff]);
-  const validDriver = useMemo(
-    () => toPos(currentDriverPos) ?? toPos(driverPosition) ?? toPos(getCurrentPosition?.()),
-    [currentDriverPos, driverPosition, getCurrentPosition]
-  );
+  const validPickup  = toPos(ride?.pickup);
+  const validDropoff = toPos(ride?.dropoff);
+  const validDriver  = toPos(currentDriverPos) ?? toPos(driverPosition) ?? toPos(getCurrentPosition?.());
 
   const status = ride?.status;
 
-  const initialCenter = useMemo(() => {
+  // Initial center — prefer pickup, then driver, then KTM
+  const initialCenter = (() => {
     if (validPickup  && isValidPos(validPickup))  return validPickup;
     if (validDriver  && isValidPos(validDriver))  return validDriver;
     if (validDropoff && isValidPos(validDropoff)) return validDropoff;
     return getSafeCenter();
-  }, []); // eslint-disable-line — intentionally only on mount
+  })();
 
   const shouldCenterOnDriver =
     (status === RIDE_STATUS.ACCEPTED || status === RIDE_STATUS.ACTIVE) &&
     validDriver && isValidPos(validDriver);
 
-  // FIX: Memoize ETA so it doesn't recalculate every render
-  const realTimeETA = useMemo(() => {
+  // Real-time ETA
+  const getRealTimeETA = useCallback(() => {
     if (!ride) return null;
     if (status === RIDE_STATUS.ACCEPTED && validDriver && ride.pickup) {
       return calculateETAFromDistance(calcDistance(validDriver, ride.pickup));
@@ -315,15 +314,8 @@ function RideMap({ onLocationSelect, selectionMode }) {
     return null;
   }, [status, validDriver, ride]);
 
-  // FIX: Memoize route points
-  const toPickupPoints = useMemo(
-    () => routeData?.toPickup?.waypoints?.map(w => toPos(w)).filter(Boolean) ?? [],
-    [routeData?.toPickup]
-  );
-  const toDropoffPoints = useMemo(
-    () => routeData?.toDropoff?.waypoints?.map(w => toPos(w)).filter(Boolean) ?? [],
-    [routeData?.toDropoff]
-  );
+  const toPickupPoints  = routeData?.toPickup?.waypoints?.map(w => toPos(w)).filter(Boolean) ?? [];
+  const toDropoffPoints = routeData?.toDropoff?.waypoints?.map(w => toPos(w)).filter(Boolean) ?? [];
 
   const activeRoutePoints = status === RIDE_STATUS.ACCEPTED
     ? toPickupPoints
@@ -332,21 +324,23 @@ function RideMap({ onLocationSelect, selectionMode }) {
       : [];
   const ghostRoutePoints = status === RIDE_STATUS.ACCEPTED ? toDropoffPoints : [];
 
-  const isAccepted   = status === RIDE_STATUS.ACCEPTED;
+  const realTimeETA = getRealTimeETA();
+  const isAccepted  = status === RIDE_STATUS.ACCEPTED;
   const isActiveRide = status === RIDE_STATUS.ACTIVE;
-  const isArrived    = status === RIDE_STATUS.ARRIVED;
-  const isLivePhase  = isAccepted || isActiveRide;
+  const isArrived   = status === RIDE_STATUS.ARRIVED;
+  const isLivePhase = isAccepted || isActiveRide;
 
-  const etaPhase = isAccepted ? "to_pickup" : isActiveRide ? "to_dropoff" : null;
-  const etaDistance = useMemo(() => {
-    if (isAccepted && validDriver && ride?.pickup)
-      return `${calcDistance(validDriver, ride.pickup).toFixed(1)} km`;
-    if (isActiveRide && validDriver && ride?.dropoff)
-      return `${calcDistance(validDriver, ride.dropoff).toFixed(1)} km`;
-    return null;
-  }, [isAccepted, isActiveRide, validDriver, ride]);
+  let etaPhase    = null;
+  let etaDistance = null;
+  if (isAccepted && validDriver && ride?.pickup) {
+    etaPhase    = "to_pickup";
+    etaDistance = `${calcDistance(validDriver, ride.pickup).toFixed(1)} km`;
+  } else if (isActiveRide && validDriver && ride?.dropoff) {
+    etaPhase    = "to_dropoff";
+    etaDistance = `${calcDistance(validDriver, ride.dropoff).toFixed(1)} km`;
+  }
 
-  const driverName  = ride?.driverName  || "Driver";
+  const driverName  = ride?.driverName || "Driver";
   const vehicleInfo = ride?.vehicleType ? `${ride.vehicleType} · ${ride.plate || ""}` : "";
 
   return (
@@ -380,6 +374,7 @@ function RideMap({ onLocationSelect, selectionMode }) {
           <TileLayer url="https://tile.openweathermap.org/map/traffic_new/{z}/{x}/{y}.png?appid=b6fd3a6cd2efc34f0cdc599788735e7d" opacity={0.4} maxZoom={19} />
         )}
 
+        {/* Handlers — only mount after map is ready */}
         <MapClickHandler onLocationSelect={onLocationSelect} selectionMode={selectionMode} />
         {mapReady && (
           <SafeMapController
@@ -389,12 +384,12 @@ function RideMap({ onLocationSelect, selectionMode }) {
           />
         )}
 
-        {/* Ghost route */}
+        {/* Ghost route (upcoming leg) */}
         {ghostRoutePoints.length > 1 && (
           <Polyline positions={ghostRoutePoints} pathOptions={{ color: "#475569", weight: 3, opacity: 0.35, dashArray: "6 5" }} />
         )}
 
-        {/* Active route */}
+        {/* Active route — shadow + colour */}
         {activeRoutePoints.length > 1 && (
           <>
             <Polyline positions={activeRoutePoints} pathOptions={{ color: "#1e40af", weight: 8, opacity: 0.3 }} />
@@ -421,7 +416,7 @@ function RideMap({ onLocationSelect, selectionMode }) {
           </Marker>
         )}
 
-        {/* Dropoff marker */}
+        {/* Dropoff marker + zone */}
         {validDropoff && isValidPos(validDropoff) && (
           <>
             <Circle center={validDropoff} radius={80} pathOptions={{ color: "#10b981", fillColor: "#10b981", fillOpacity: 0.12, weight: 1.5 }} />
@@ -468,10 +463,10 @@ function RideMap({ onLocationSelect, selectionMode }) {
             {isArrived    ? "📍 Driver Arrived!" :
              isActiveRide ? "🚗 Ride in Progress" :
              isAccepted   ? "🚗 Driver En Route" :
-             status === RIDE_STATUS.REQUESTING ? "⏳ Finding Driver..." :
-             status === RIDE_STATUS.PROCESSING ? "🔄 Processing..." :
-             status === RIDE_STATUS.COMPLETED  ? "✅ Ride Completed" :
-             status === RIDE_STATUS.CANCELLED  ? "❌ Cancelled" : status}
+             status === RIDE_STATUS.REQUESTING  ? "⏳ Finding Driver..." :
+             status === RIDE_STATUS.PROCESSING  ? "🔄 Processing..." :
+             status === RIDE_STATUS.COMPLETED   ? "✅ Ride Completed" :
+             status === RIDE_STATUS.CANCELLED   ? "❌ Cancelled" : status}
           </div>
         </div>
       )}
