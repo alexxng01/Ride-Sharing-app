@@ -79,42 +79,32 @@ function HistoryCard({ item, index }) {
 }
 
 export default function HistoryPanel() {
-  const { history, historyLoading, historyError, loadHistory } = useRide();
+  const { history, historyLoading, loadHistory } = useRide();
   const [localLoading, setLocalLoading] = useState(false);
   const [lastLoadTime, setLastLoadTime] = useState(null);
   const [error, setError] = useState(null);
-  
-  // Rate limiting refs
+
   const lastFetchTime = useRef(0);
   const fetchTimeoutRef = useRef(null);
   const isMounted = useRef(true);
-  const autoRefreshEnabled = useRef(true);
 
-  // Filter to show only completed rides
+  // Only show completed rides, already deduplicated in RideContext
   const completedRides = (history || []).filter((h) => h.status === RIDE_STATUS.COMPLETED);
-  
-  // Calculate total earnings
   const totalEarnings = completedRides.reduce((sum, h) => sum + (h.fare || 0), 0);
 
-  // Memoized load function with rate limiting
   const handleLoadHistory = useCallback(async (force = false) => {
-    // Clear any pending timeout
     if (fetchTimeoutRef.current) {
       clearTimeout(fetchTimeoutRef.current);
       fetchTimeoutRef.current = null;
     }
 
-    // Rate limiting: minimum 5 seconds between requests (unless forced)
     const now = Date.now();
     const timeSinceLastFetch = now - lastFetchTime.current;
-    
+
     if (!force && timeSinceLastFetch < 5000 && lastFetchTime.current !== 0) {
       const waitTime = 5000 - timeSinceLastFetch;
-      console.log(`Rate limited. Waiting ${waitTime}ms before next fetch`);
-      
-      // Show rate limit message
       setError(`Please wait ${Math.ceil(waitTime / 1000)} seconds before refreshing`);
-      
+
       fetchTimeoutRef.current = setTimeout(() => {
         if (isMounted.current) {
           setError(null);
@@ -125,10 +115,10 @@ export default function HistoryPanel() {
     }
 
     if (localLoading || historyLoading) return;
-    
+
     setLocalLoading(true);
     setError(null);
-    
+
     try {
       lastFetchTime.current = Date.now();
       await loadHistory();
@@ -147,44 +137,33 @@ export default function HistoryPanel() {
     }
   }, [loadHistory, historyLoading, localLoading]);
 
-  // Auto-load on mount only once
   useEffect(() => {
     isMounted.current = true;
-    
-    // Load history only once on mount
+
     const initLoad = async () => {
       if (isMounted.current && !lastLoadTime && !history.length) {
-        await handleLoadHistory(true); // Force load on mount
+        await handleLoadHistory(true);
       }
     };
-    
+
     initLoad();
-    
+
     return () => {
       isMounted.current = false;
       if (fetchTimeoutRef.current) {
         clearTimeout(fetchTimeoutRef.current);
       }
     };
-  }, []); // Empty dependency array - only run once
+  }, []); // eslint-disable-line
 
-  // Auto-refresh disabled to prevent 429 errors
-  // User must manually click refresh button
-
-  // Listen to visibility change - only refresh if user explicitly wants to
-  // Disabled auto-refresh to prevent rate limiting
   useEffect(() => {
     const handleVisibilityChange = () => {
-      // Don't auto-refresh, just log
-      if (document.visibilityState === 'visible') {
-        console.log("Tab became visible - use refresh button to update");
+      if (document.visibilityState === "visible") {
+        console.log("Tab visible — use refresh button to update");
       }
     };
-    
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, []);
 
   return (
@@ -215,14 +194,14 @@ export default function HistoryPanel() {
       </div>
 
       {/* Error message */}
-      {(error || historyError) && (
+      {error && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 text-center"
         >
           <AlertTriangle className="w-5 h-5 text-red-400 mx-auto mb-1" />
-          <p className="text-red-400 text-xs">{error || historyError}</p>
+          <p className="text-red-400 text-xs">{error}</p>
           <button
             onClick={() => handleLoadHistory(true)}
             className="mt-2 px-3 py-1 bg-red-500/20 text-red-400 rounded-lg text-xs hover:bg-red-500/30 transition-all"
@@ -232,9 +211,9 @@ export default function HistoryPanel() {
         </motion.div>
       )}
 
-      {/* Stats bar - only show if there are completed rides */}
+      {/* Stats bar */}
       {completedRides.length > 0 && (
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           className="grid grid-cols-2 gap-2"
@@ -295,11 +274,11 @@ export default function HistoryPanel() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
             >
+              {/* FIX: use _stableKey (rideId) as the React key — guaranteed unique after dedup */}
               {completedRides.map((item, i) => (
-                <HistoryCard key={item.id || item.rideId || i} item={item} index={i} />
+                <HistoryCard key={item._stableKey} item={item} index={i} />
               ))}
-              
-              {/* Refresh indicator at bottom */}
+
               {(historyLoading || localLoading) && completedRides.length > 0 && (
                 <motion.div
                   initial={{ opacity: 0 }}
@@ -310,15 +289,12 @@ export default function HistoryPanel() {
                   <span className="text-xs text-dark-500">Refreshing...</span>
                 </motion.div>
               )}
-              
-              {/* Rate limit info */}
-              {lastFetchTime.current > 0 && (
-                <div className="text-center py-2">
-                  <p className="text-dark-600 text-[10px]">
-                    Click refresh to update • Auto-refresh disabled to prevent rate limiting
-                  </p>
-                </div>
-              )}
+
+              <div className="text-center py-2">
+                <p className="text-dark-600 text-[10px]">
+                  Click refresh to update • Auto-refresh disabled to prevent rate limiting
+                </p>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

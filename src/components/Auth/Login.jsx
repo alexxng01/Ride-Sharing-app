@@ -71,7 +71,7 @@ export default function Login() {
 
           {/* Demo credentials hint */}
           {/* Demo credentials hint — click to autofill */}
-          <button
+          {/*<button
             type="button"
             onClick={() => {
               setUsername("intern@namlotech.com");
@@ -82,7 +82,7 @@ export default function Login() {
           >
             <span className="text-dark-400">click to autofill → </span>
             intern@namlotech.com / namlo2026
-          </button>
+          </button>*/}
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">

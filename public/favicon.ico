@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Background -->
+  <rect width="64" height="64" rx="14" fill="#0F172A"/>
+
+  <!-- Pin shape -->
+  <path d="M32 6 C18 6 10 16 10 26 C10 42 32 58 32 58 C32 58 54 42 54 26 C54 16 46 6 32 6 Z" fill="#FACC15"/>
+
+  <!-- Inner circle (dark cutout) -->
+  <circle cx="32" cy="26" r="14" fill="#0F172A"/>
+
+  <!-- Car body -->
+  <rect x="22" y="22" width="20" height="8" rx="2.5" fill="#FACC15"/>
+
+  <!-- Car roof -->
+  <rect x="25" y="14" width="14" height="10" rx="3" fill="#FACC15"/>
+
+  <!-- Windows -->
+  <rect x="26" y="15" width="5" height="7" rx="1.5" fill="#0F172A" opacity="0.5"/>
+  <rect x="33" y="15" width="5" height="7" rx="1.5" fill="#0F172A" opacity="0.5"/>
+
+  <!-- Wheels -->
+  <circle cx="25" cy="31" r="3.5" fill="#FACC15"/>
+  <circle cx="25" cy="31" r="1.8" fill="#0F172A"/>
+  <circle cx="39" cy="31" r="3.5" fill="#FACC15"/>
+  <circle cx="39" cy="31" r="1.8" fill="#0F172A"/>
+</svg>

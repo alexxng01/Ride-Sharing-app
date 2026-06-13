@@ -20,9 +20,8 @@ const DRIVER_NAMES  = ["Prakash B.", "Sanjay T.", "Ramesh K.", "Hari P.", "Bikas
 const VEHICLE_TYPES = ["Motorcycle", "Car", "Electric Bike"];
 const PLATES        = ["BA 1 PA 1234", "BA 2 JA 5678", "BA 3 KA 9012", "BA 4 MA 3456"];
 
-// ── Distance constants (in km) ──────────────────────────────────────────────
-const MIN_DRIVER_DISTANCE_KM = 0;     // No minimum — same location is fine
-const MAX_DRIVER_DISTANCE_KM = 2.0;   // 2 kilometers
+const MIN_DRIVER_DISTANCE_KM = 0;
+const MAX_DRIVER_DISTANCE_KM = 2.0;
 
 export function RideProvider({ children }) {
   const [ride, setRide] = useState(null);
@@ -38,7 +37,6 @@ export function RideProvider({ children }) {
   const [isDriverNearby, setIsDriverNearby] = useState(false);
   const [driverDistanceToPickup, setDriverDistanceToPickup] = useState(null);
 
-  // Store position in ref to avoid re-renders
   const driverPositionRef = useRef(null);
   const positionListeners = useRef(new Set());
   const [driverPosition, setDriverPosition] = useState(null);
@@ -54,7 +52,6 @@ export function RideProvider({ children }) {
   const pendingNavStats = useRef(null);
   const throttleTimeout = useRef(null);
 
-  // ── Get real device GPS location and set as driver position ────────────────
   useEffect(() => {
     if (!navigator.geolocation) return;
 
@@ -67,7 +64,6 @@ export function RideProvider({ children }) {
         driverPositionRef.current = devicePos;
         setDriverPosition(devicePos);
         notifyPositionListeners(devicePos);
-        // Persist to Firebase so rider and driver share the same position
         try {
           await set(ref(db, "driverPosition"), devicePos);
         } catch (e) {
@@ -76,7 +72,6 @@ export function RideProvider({ children }) {
       },
       (err) => {
         console.warn("Geolocation error, using random Kathmandu coord:", err);
-        // Fallback to a random Kathmandu coord if GPS denied
         const fallback = randomKtmCoord();
         driverPositionRef.current = fallback;
         setDriverPosition(fallback);
@@ -85,7 +80,6 @@ export function RideProvider({ children }) {
     );
   }, []); // eslint-disable-line
 
-  // ── Helper functions (defined first) ──────────────────────────────────────────
   const updateRide = useCallback(async (data) => {
     await set(ref(db, "currentRide"), data);
   }, []);
@@ -94,19 +88,17 @@ export function RideProvider({ children }) {
     await set(ref(db, "driverPosition"), pos);
   }, []);
 
-  // ── Distance Validation Helper — only max range, no minimum ────────────────
   const isDriverWithinRange = useCallback((driverPos, pickupPos) => {
-    if (!driverPos || !pickupPos) return true; // Allow if positions unknown
+    if (!driverPos || !pickupPos) return true;
     try {
       const distance = calcDistance(driverPos, pickupPos);
       return distance <= MAX_DRIVER_DISTANCE_KM;
     } catch (err) {
       console.warn("Distance calculation error:", err);
-      return true; // Allow on error
+      return true;
     }
   }, []);
 
-  // ── Get Formatted Distance ──────────────────────────────────────────────────
   const getFormattedDistance = useCallback((distanceKm) => {
     if (!distanceKm && distanceKm !== 0) return "—";
     if (distanceKm < 0.001) return "< 1m";
@@ -114,7 +106,6 @@ export function RideProvider({ children }) {
     return `${distanceKm.toFixed(1)}km`;
   }, []);
 
-  // ── Generate Nearby Rides based on distance ──────────────────────────────────
   const generateNearbyRides = useCallback((currentDriverPos) => {
     if (!currentDriverPos) {
       setNearbyRides([]);
@@ -122,12 +113,11 @@ export function RideProvider({ children }) {
       return;
     }
 
-    // Generate mock nearby rides within 2km
     const mockRides = [];
     const baseKtmCoord = { lat: 27.7172, lng: 85.3240 };
 
     for (let i = 0; i < 3; i++) {
-      const offsetLat = (Math.random() - 0.5) * 0.02; // ~2km variance
+      const offsetLat = (Math.random() - 0.5) * 0.02;
       const offsetLng = (Math.random() - 0.5) * 0.02;
 
       const pickup = {
@@ -145,7 +135,6 @@ export function RideProvider({ children }) {
 
       const distanceToPickup = calcDistance(currentDriverPos, pickup);
 
-      // Only show rides within max distance
       if (distanceToPickup <= MAX_DRIVER_DISTANCE_KM) {
         const distance = calcDistance(pickup, dropoff);
         mockRides.push({
@@ -167,7 +156,7 @@ export function RideProvider({ children }) {
     setIsDriverNearby(mockRides.length > 0);
   }, [getFormattedDistance]);
 
-  // ── History functions (defined early) ──────────────────────────────────
+  // ── FIX: Deduplicate history by rideId before setting state ────────────────
   const loadHistory = useCallback(async (silent = false) => {
     if (!isMounted.current) return;
 
@@ -178,18 +167,24 @@ export function RideProvider({ children }) {
     try {
       const data = await rideHistoryApi.getAll();
 
-      const historyWithIds = (data || []).map((item, index) => ({
-        ...item,
-        id: item.id || item.rideId || `history_${Date.now()}_${index}`,
-        uniqueKey: `${item.rideId || item.id}_${item.createdAt}_${index}`
-      })).sort((a, b) => {
+      // Deduplicate by rideId — keep the latest entry if duplicates exist
+      const seen = new Map();
+      (data || []).forEach((item, index) => {
+        const key = item.rideId || item.id;
+        if (!key) return; // skip entries with no identifier
+        if (!seen.has(key)) {
+          seen.set(key, { ...item, _stableKey: key });
+        }
+      });
+
+      const deduped = Array.from(seen.values()).sort((a, b) => {
         const dateA = new Date(a.createdAt || a.completedAt || 0);
         const dateB = new Date(b.createdAt || b.completedAt || 0);
         return dateB - dateA;
       });
 
       if (isMounted.current) {
-        setHistory(historyWithIds);
+        setHistory(deduped);
         setLastHistoryUpdate(new Date());
       }
     } catch (error) {
@@ -250,7 +245,6 @@ export function RideProvider({ children }) {
     }
   }, [pendingHistoryUpdates, loadHistory]);
 
-  // ── Auto cancel ride after timeout ──────────────────────────────────────────
   const startRideTimeout = useCallback((rideData) => {
     if (rideTimeoutTimer.current) {
       clearTimeout(rideTimeoutTimer.current);
@@ -295,7 +289,6 @@ export function RideProvider({ children }) {
     }
   }, []);
 
-  // ── Real-time ETA calculation ──────────────────────────────────────────────
   const calculateRealTimeETA = useCallback((currentPos, destination) => {
     if (!currentPos || !destination) return null;
 
@@ -313,12 +306,10 @@ export function RideProvider({ children }) {
     };
   }, []);
 
-  // Throttled navStats update
   const updateNavStatsThrottled = useCallback((newStats) => {
     if (!isMounted.current) return;
 
     const now = Date.now();
-
     pendingNavStats.current = newStats;
 
     if (throttleTimeout.current) {
@@ -341,7 +332,6 @@ export function RideProvider({ children }) {
     }
   }, []);
 
-  // Notify position listeners
   const notifyPositionListeners = useCallback((position) => {
     positionListeners.current.forEach(listener => {
       try {
@@ -352,7 +342,6 @@ export function RideProvider({ children }) {
     });
   }, []);
 
-  // ── Animation functions with real-time ETA updates ──────────────────────────
   const animateAlongRouteOptimized = useCallback((waypoints, totalMs, intervalMs = 1500, onStep, onDone) => {
     if (moveInterval.current) {
       clearInterval(moveInterval.current);
@@ -364,7 +353,6 @@ export function RideProvider({ children }) {
       return;
     }
 
-    const steps = Math.max(Math.floor(totalMs / intervalMs), 1);
     let step = 0;
     let lastSentT = -1;
     const startTime = Date.now();
@@ -421,7 +409,6 @@ export function RideProvider({ children }) {
     }, intervalMs);
   }, [updatePos]);
 
-  // Initialize navStats
   const initializeNavStats = useCallback((rideData) => {
     if (!rideData) return;
 
@@ -451,14 +438,12 @@ export function RideProvider({ children }) {
     }
   }, []);
 
-  // ── Process pending history updates ─────────────────────────────────────────
   useEffect(() => {
     if (pendingHistoryUpdates.length > 0 && !historyLoading) {
       processPendingUpdates();
     }
   }, [pendingHistoryUpdates, historyLoading, processPendingUpdates]);
 
-  // ── Firebase listeners ────────────────────────────────────────────────────
   useEffect(() => {
     isMounted.current = true;
 
@@ -511,7 +496,6 @@ export function RideProvider({ children }) {
     };
   }, [notifyPositionListeners, initializeNavStats, startRideTimeout, clearRideTimeout, generateNearbyRides]);
 
-  // Clear movement on terminal
   useEffect(() => {
     if (ride && TERMINAL_STATES.has(ride.status)) {
       if (moveInterval.current) {
@@ -522,7 +506,6 @@ export function RideProvider({ children }) {
     }
   }, [ride, clearRideTimeout]);
 
-  // ── Rider actions ─────────────────────────────────────────────────────────
   const requestRide = useCallback(async (pickup, dropoff) => {
     if (moveInterval.current) {
       clearInterval(moveInterval.current);
@@ -577,14 +560,12 @@ export function RideProvider({ children }) {
     toast("Ride cancelled.", { icon: "🚫" });
   }, [ride, updateRide, persistRide, clearRideTimeout]);
 
-  // ── Driver actions — no distance blocking ─────────────────────────────────
   const acceptRide = useCallback(async () => {
     if (!ride) return;
 
     clearTimeout(noDriverTimer.current);
     clearRideTimeout();
 
-    // Always use the current device/driver position, fall back to randomKtmCoord
     const driverStart = driverPositionRef.current || driverPosition || randomKtmCoord();
     const driverName   = DRIVER_NAMES[Math.floor(Math.random() * DRIVER_NAMES.length)];
     const vehicleType  = VEHICLE_TYPES[Math.floor(Math.random() * VEHICLE_TYPES.length)];
@@ -756,7 +737,6 @@ export function RideProvider({ children }) {
     await remove(ref(db, "driverPosition"));
   }, [clearRideTimeout]);
 
-  // ── Helper functions for components ────────────────────────────────────────
   const subscribeToPosition = useCallback((listener) => {
     positionListeners.current.add(listener);
     if (driverPositionRef.current) {
