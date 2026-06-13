@@ -469,18 +469,25 @@ export function RideProvider({ children }) {
       }
     });
 
-    const unsubPos = onValue(posDbRef, (snap) => {
-      if (isMounted.current) {
-        const position = snap.val();
-        driverPositionRef.current = position;
-        setDriverPosition(position);
-        notifyPositionListeners(position);
+   const unsubPos = onValue(posDbRef, (snap) => {
+  if (isMounted.current) {
+    const position = snap.val();
 
-        if (position) {
-          generateNearbyRides(position);
-        }
-      }
-    });
+    // ✅ Only update if position actually changed
+    const prev = driverPositionRef.current;
+    if (prev && position &&
+        prev.lat === position.lat &&
+        prev.lng === position.lng) return;
+
+    driverPositionRef.current = position;
+    setDriverPosition(position);
+    notifyPositionListeners(position);
+
+    if (position) {
+      generateNearbyRides(position);
+    }
+  }
+});
 
     return () => {
       isMounted.current = false;
