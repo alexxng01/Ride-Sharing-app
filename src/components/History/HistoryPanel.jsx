@@ -1,15 +1,18 @@
 // src/components/History/HistoryPanel.jsx
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Clock, CheckCircle, XCircle, AlertTriangle, RefreshCw, Car, History as HistoryIcon } from "lucide-react";
+import {
+  Clock, CheckCircle, XCircle, AlertTriangle,
+  RefreshCw, Car, History as HistoryIcon,
+} from "lucide-react";
 import { useRide } from "../../store/RideContext";
 import { RIDE_STATUS } from "../../lib/rideStates";
 
 const STATUS_ICON = {
-  [RIDE_STATUS.COMPLETED]: <CheckCircle size={14} className="text-green-400" />,
-  [RIDE_STATUS.CANCELLED]: <XCircle     size={14} className="text-dark-400"  />,
-  [RIDE_STATUS.REJECTED]:  <AlertTriangle size={14} className="text-red-400" />,
-  [RIDE_STATUS.NO_DRIVER]: <AlertTriangle size={14} className="text-orange-400" />,
+  [RIDE_STATUS.COMPLETED]: <CheckCircle  size={14} className="text-green-400"  />,
+  [RIDE_STATUS.CANCELLED]: <XCircle      size={14} className="text-dark-400"   />,
+  [RIDE_STATUS.REJECTED]:  <AlertTriangle size={14} className="text-red-400"   />,
+  [RIDE_STATUS.NO_DRIVER]: <AlertTriangle size={14} className="text-orange-400"/>,
 };
 
 const STATUS_COLOR = {
@@ -37,7 +40,7 @@ function HistoryCard({ item, index }) {
         </div>
         <span className="text-xs text-dark-500">
           {new Date(item.createdAt || item.completedAt || Date.now()).toLocaleString("en-NP", {
-            month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
+            month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
           })}
         </span>
       </div>
@@ -80,31 +83,46 @@ function HistoryCard({ item, index }) {
 
 export default function HistoryPanel() {
   const { history, historyLoading, loadHistory } = useRide();
+
   const [localLoading, setLocalLoading] = useState(false);
   const [lastLoadTime, setLastLoadTime] = useState(null);
-  const [error, setError] = useState(null);
+  const [error,        setError]        = useState(null);
 
-  const lastFetchTime = useRef(0);
-  const fetchTimeoutRef = useRef(null);
-  const isMounted = useRef(true);
+  // ── Use refs for values that shouldn't re-create the callback ──────────────
+  const isMounted        = useRef(true);
+  const lastFetchTime    = useRef(0);
+  const fetchTimeoutRef  = useRef(null);
+  // FIX: store loading flags in refs so handleLoadHistory never needs them
+  //      as deps — reading a ref inside a callback doesn't trigger re-renders
+  const localLoadingRef  = useRef(false);
+  const historyLoadingRef = useRef(false);
+  // FIX: keep loadHistory stable via ref — avoids re-creating handleLoadHistory
+  //      every time RideContext re-renders
+  const loadHistoryRef   = useRef(loadHistory);
 
-  // Only show completed rides, already deduplicated in RideContext
-  const completedRides = (history || []).filter((h) => h.status === RIDE_STATUS.COMPLETED);
-  const totalEarnings = completedRides.reduce((sum, h) => sum + (h.fare || 0), 0);
+  // Keep refs in sync with latest values
+  useEffect(() => { localLoadingRef.current   = localLoading;   }, [localLoading]);
+  useEffect(() => { historyLoadingRef.current = historyLoading; }, [historyLoading]);
+  useEffect(() => { loadHistoryRef.current    = loadHistory;    }, [loadHistory]);
 
+  // ── Stable fetch function — no loading state in deps ──────────────────────
+  // FIX: empty dep array [] makes this created once and never re-created.
+  //      All mutable values are read from refs, not closed-over state.
   const handleLoadHistory = useCallback(async (force = false) => {
     if (fetchTimeoutRef.current) {
       clearTimeout(fetchTimeoutRef.current);
       fetchTimeoutRef.current = null;
     }
 
-    const now = Date.now();
+    const now              = Date.now();
     const timeSinceLastFetch = now - lastFetchTime.current;
 
+    // Rate-limit: 5 seconds between non-forced fetches
     if (!force && timeSinceLastFetch < 5000 && lastFetchTime.current !== 0) {
       const waitTime = 5000 - timeSinceLastFetch;
-      setError(`Please wait ${Math.ceil(waitTime / 1000)} seconds before refreshing`);
-
+      if (isMounted.current) {
+        setError(`Please wait ${Math.ceil(waitTime / 1000)}s before refreshing`);
+      }
       fetchTimeoutRef.current = setTimeout(() => {
         if (isMounted.current) {
           setError(null);
@@ -114,14 +132,18 @@ export default function HistoryPanel() {
       return;
     }
 
-    if (localLoading || historyLoading) return;
+    // FIX: read from refs — no stale closure, no extra deps
+    if (localLoadingRef.current || historyLoadingRef.current) return;
 
-    setLocalLoading(true);
-    setError(null);
+    if (isMounted.current) {
+      setLocalLoading(true);
+      setError(null);
+    }
+    localLoadingRef.current = true;
 
     try {
       lastFetchTime.current = Date.now();
-      await loadHistory();
+      await loadHistoryRef.current?.();
       if (isMounted.current) {
         setLastLoadTime(new Date());
       }
@@ -131,17 +153,22 @@ export default function HistoryPanel() {
         setError(err.message || "Failed to load history");
       }
     } finally {
+      localLoadingRef.current = false;
       if (isMounted.current) {
         setLocalLoading(false);
       }
     }
-  }, [loadHistory, historyLoading, localLoading]);
+  }, []); // ← stable forever; all mutable values read from refs
 
+  // ── Initial load on mount only ────────────────────────────────────────────
+  // FIX: handleLoadHistory is now stable (empty deps), so this effect
+  //      runs exactly once on mount and never again.
   useEffect(() => {
     isMounted.current = true;
 
     const initLoad = async () => {
-      if (isMounted.current && !lastLoadTime && !history.length) {
+      const hasHistory = Array.isArray(history) && history.length > 0;
+      if (!hasHistory && !lastLoadTime) {
         await handleLoadHistory(true);
       }
     };
@@ -150,25 +177,30 @@ export default function HistoryPanel() {
 
     return () => {
       isMounted.current = false;
-      if (fetchTimeoutRef.current) {
-        clearTimeout(fetchTimeoutRef.current);
-      }
+      if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current);
     };
-  }, []); // eslint-disable-line
+  }, [handleLoadHistory]); // stable ref — runs once
 
+  // ── Visibility change — log only, no auto-fetch ───────────────────────────
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        console.log("Tab visible — use refresh button to update");
+        // intentionally no auto-fetch — user clicks refresh manually
       }
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, []);
 
+  // ── Derived data ──────────────────────────────────────────────────────────
+  const completedRides  = (history || []).filter((h) => h.status === RIDE_STATUS.COMPLETED);
+  const totalEarnings   = completedRides.reduce((sum, h) => sum + (h.fare || 0), 0);
+  const isLoading       = historyLoading || localLoading;
+
   return (
     <div className="h-full flex flex-col gap-4">
-      {/* Header */}
+
+      {/* ── Header ──────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-purple-500/20 rounded-xl flex items-center justify-center">
@@ -177,7 +209,9 @@ export default function HistoryPanel() {
           <div>
             <h2 className="text-white font-display font-bold text-lg leading-none">History</h2>
             <p className="text-dark-400 text-xs mt-0.5">
-              {lastLoadTime ? `Last updated: ${lastLoadTime.toLocaleTimeString()}` : "Completed rides"}
+              {lastLoadTime
+                ? `Last updated: ${lastLoadTime.toLocaleTimeString()}`
+                : "Completed rides"}
             </p>
           </div>
         </div>
@@ -185,15 +219,15 @@ export default function HistoryPanel() {
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           onClick={() => handleLoadHistory(true)}
-          disabled={historyLoading || localLoading}
+          disabled={isLoading}
           className="w-8 h-8 bg-dark-800 border border-dark-700 rounded-lg flex items-center justify-center text-dark-400 hover:text-white hover:border-dark-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           title="Refresh history"
         >
-          <RefreshCw size={14} className={(historyLoading || localLoading) ? "animate-spin" : ""} />
+          <RefreshCw size={14} className={isLoading ? "animate-spin" : ""} />
         </motion.button>
       </div>
 
-      {/* Error message */}
+      {/* ── Error banner ────────────────────────────────────────────── */}
       {error && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -211,7 +245,7 @@ export default function HistoryPanel() {
         </motion.div>
       )}
 
-      {/* Stats bar */}
+      {/* ── Stats bar ───────────────────────────────────────────────── */}
       {completedRides.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -229,10 +263,12 @@ export default function HistoryPanel() {
         </motion.div>
       )}
 
-      {/* List */}
+      {/* ── List ────────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto space-y-3 pr-1 custom-scrollbar">
         <AnimatePresence mode="wait">
-          {(historyLoading || localLoading) && !completedRides.length ? (
+
+          {/* Loading skeleton (first load only) */}
+          {isLoading && completedRides.length === 0 ? (
             <motion.div
               key="loading"
               initial={{ opacity: 0 }}
@@ -243,6 +279,7 @@ export default function HistoryPanel() {
               <RefreshCw size={24} className="text-dark-500 animate-spin" />
               <p className="text-dark-400 text-sm">Loading history...</p>
             </motion.div>
+
           ) : completedRides.length === 0 ? (
             <motion.div
               key="empty"
@@ -267,19 +304,25 @@ export default function HistoryPanel() {
                 </motion.button>
               </div>
             </motion.div>
+
           ) : (
             <motion.div
               key="list"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              className="space-y-3"
             >
-              {/* FIX: use _stableKey (rideId) as the React key — guaranteed unique after dedup */}
               {completedRides.map((item, i) => (
-                <HistoryCard key={item._stableKey} item={item} index={i} />
+                <HistoryCard
+                  key={item._stableKey || item.rideId || i}
+                  item={item}
+                  index={i}
+                />
               ))}
 
-              {(historyLoading || localLoading) && completedRides.length > 0 && (
+              {/* Subtle refresh indicator when re-fetching with existing data */}
+              {isLoading && completedRides.length > 0 && (
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -292,11 +335,12 @@ export default function HistoryPanel() {
 
               <div className="text-center py-2">
                 <p className="text-dark-600 text-[10px]">
-                  Click refresh to update • Auto-refresh disabled to prevent rate limiting
+                  Click refresh to update · Auto-refresh disabled to prevent rate limiting
                 </p>
               </div>
             </motion.div>
           )}
+
         </AnimatePresence>
       </div>
     </div>
