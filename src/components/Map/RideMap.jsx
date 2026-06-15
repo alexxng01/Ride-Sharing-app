@@ -10,7 +10,11 @@ import { KTM_CENTER, calcDistance } from "../../lib/rideStates";
 import { useRide } from "../../store/RideContext";
 import { RIDE_STATUS } from "../../lib/rideStates";
 
-// Fix default marker icons (CRA)
+// OpenWeather key must come from env. If absent, the traffic toggle is hidden.
+const OPENWEATHER_KEY = process.env.REACT_APP_OPENWEATHER_API_KEY;
+
+// Fix default marker icons (CRA) — required because Leaflet's default icon
+// URLs are resolved relative to the current page and fail under webpack/CRA.
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png",
@@ -146,13 +150,11 @@ const MapClickHandler = memo(function MapClickHandler({ onLocationSelect, select
     click: (e) => {
       const { lat, lng } = e.latlng;
       if (!isValidPos([lat, lng])) return;
-      const mode    = selectionModeRef.current;
+      // Always route through onLocationSelect; the parent now decides what
+      // to do based on selectionMode (set by the "Set Pickup"/"Set Dropoff"
+      // buttons in the map toolbar). No more magic global.
       const handler = onLocationSelectRef.current;
-      if (mode && window.handleRiderMapSelection) {
-        window.handleRiderMapSelection({ lat, lng }, mode);
-      } else if (handler) {
-        handler({ lat, lng });
-      }
+      if (handler) handler({ lat, lng });
     },
   });
   return null;
@@ -283,6 +285,8 @@ function RideMap({ onLocationSelect, selectionMode }) {
   const {
     ride, driverPosition, routeData, navStats,
     subscribeToPosition, getCurrentPosition,
+    mapSelectedPickup, mapSelectedDropoff,
+    setMapSelectionMode, resetMapSelection,
   } = useRide();
 
   const [mapMode,         setMapMode]         = useState("satellite");
@@ -320,6 +324,10 @@ function RideMap({ onLocationSelect, selectionMode }) {
   const validDriver  = toPos(currentDriverPos)
                     ?? toPos(driverPosition)
                     ?? toPos(getCurrentPosition?.());
+
+  // Preview markers from the map-selection toolbar (distinct from ride.pickup).
+  const mapPickupPos  = toPos(mapSelectedPickup);
+  const mapDropoffPos = toPos(mapSelectedDropoff);
 
   const initialCenter = (() => {
     if (validPickup  && isValidPos(validPickup))  return validPickup;
@@ -403,9 +411,9 @@ function RideMap({ onLocationSelect, selectionMode }) {
         {mapMode === "terrain" && (
           <TileLayer url="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png" attribution="&copy; OpenTopoMap" maxZoom={17} />
         )}
-        {showTraffic && (
+        {showTraffic && OPENWEATHER_KEY && (
           <TileLayer
-            url="https://tile.openweathermap.org/map/traffic_new/{z}/{x}/{y}.png?appid=b6fd3a6cd2efc34f0cdc599788735e7d"
+            url={`https://tile.openweathermap.org/map/traffic_new/{z}/{x}/{y}.png?appid=${OPENWEATHER_KEY}`}
             opacity={0.4} maxZoom={19}
           />
         )}
@@ -459,6 +467,24 @@ function RideMap({ onLocationSelect, selectionMode }) {
               <div className="font-semibold text-xs">📍 Pickup Location</div>
               <div className="text-xs text-gray-500">{validPickup[0].toFixed(5)}, {validPickup[1].toFixed(5)}</div>
               {isArrived && <div className="text-xs text-green-500 mt-1">✓ Driver has arrived</div>}
+            </Popup>
+          </Marker>
+        )}
+
+        {/* ── Map-selected preview markers (set via toolbar) ──────── */}
+        {mapPickupPos && isValidPos(mapPickupPos) && (
+          <Marker position={mapPickupPos} icon={riderIcon} opacity={0.7}>
+            <Popup>
+              <div className="font-semibold text-xs">📍 Map-Selected Pickup</div>
+              <div className="text-xs text-gray-500">{mapPickupPos[0].toFixed(5)}, {mapPickupPos[1].toFixed(5)}</div>
+            </Popup>
+          </Marker>
+        )}
+        {mapDropoffPos && isValidPos(mapDropoffPos) && (
+          <Marker position={mapDropoffPos} icon={dropoffIcon} opacity={0.7}>
+            <Popup>
+              <div className="font-semibold text-xs">🏁 Map-Selected Dropoff</div>
+              <div className="text-xs text-gray-500">{mapDropoffPos[0].toFixed(5)}, {mapDropoffPos[1].toFixed(5)}</div>
             </Popup>
           </Marker>
         )}
@@ -541,6 +567,39 @@ function RideMap({ onLocationSelect, selectionMode }) {
         />
       )}
 
+      {/* ── Map selection toolbar (Pickup/Dropoff picker) ─────────────── */}
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[999] flex items-center gap-1.5 pointer-events-auto">
+        <button
+          onClick={() => setMapSelectionMode(selectionMode === "pickup" ? null : "pickup")}
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all backdrop-blur-md border ${
+            selectionMode === "pickup"
+              ? "bg-brand-500 border-brand-400 text-white"
+              : "bg-dark-800/80 border-dark-600 text-dark-300 hover:text-white"
+          }`}
+        >
+          📍 {mapSelectedPickup ? "Pickup set" : "Set Pickup"}
+        </button>
+        <button
+          onClick={() => setMapSelectionMode(selectionMode === "dropoff" ? null : "dropoff")}
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all backdrop-blur-md border ${
+            selectionMode === "dropoff"
+              ? "bg-green-500 border-green-400 text-white"
+              : "bg-dark-800/80 border-dark-600 text-dark-300 hover:text-white"
+          }`}
+        >
+          🏁 {mapSelectedDropoff ? "Dropoff set" : "Set Dropoff"}
+        </button>
+        {(mapSelectedPickup || mapSelectedDropoff || selectionMode) && (
+          <button
+            onClick={resetMapSelection}
+            className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-dark-800/80 border border-dark-600 text-dark-400 hover:text-white transition-all backdrop-blur-md"
+            title="Clear selections"
+          >
+            ✕
+          </button>
+        )}
+      </div>
+
       {/* ── Map style controls ───────────────────────────────────────── */}
       <div className="absolute top-3 right-3 z-[999] flex flex-col gap-1.5 pointer-events-auto">
         <div className="bg-dark-800/80 backdrop-blur-md border border-dark-600 rounded-lg px-2 py-1 text-[10px] text-green-400 flex items-center gap-1">
@@ -567,16 +626,18 @@ function RideMap({ onLocationSelect, selectionMode }) {
             </button>
           ))}
         </div>
-        <button
-          onClick={() => setShowTraffic(!showTraffic)}
-          className={`flex items-center justify-center px-3 py-2 rounded-lg text-xs font-medium transition-all backdrop-blur-md border ${
-            showTraffic
-              ? "bg-red-500/20 border-red-400/50 text-red-300 hover:bg-red-500/30"
-              : "bg-dark-800/80 border-dark-600 text-dark-300 hover:bg-dark-700"
-          }`}
-        >
-          {showTraffic ? "🚗 Traffic ON" : "🚦 Traffic"}
-        </button>
+        {OPENWEATHER_KEY && (
+          <button
+            onClick={() => setShowTraffic(!showTraffic)}
+            className={`flex items-center justify-center px-3 py-2 rounded-lg text-xs font-medium transition-all backdrop-blur-md border ${
+              showTraffic
+                ? "bg-red-500/20 border-red-400/50 text-red-300 hover:bg-red-500/30"
+                : "bg-dark-800/80 border-dark-600 text-dark-300 hover:bg-dark-700"
+            }`}
+          >
+            {showTraffic ? "🚗 Traffic ON" : "🚦 Traffic"}
+          </button>
+        )}
       </div>
 
       {/* ── Driver live badge ────────────────────────────────────────── */}

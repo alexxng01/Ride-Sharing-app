@@ -1,10 +1,14 @@
 // src/store/AuthContext.js
 import React, { createContext, useContext, useState, useEffect } from "react";
 
+// Demo credentials come from env vars so they aren't shipped in the client
+// bundle in plain text. Both must be set or login will always fail.
 const CREDENTIALS = {
-  username: "intern@namlotech.com",
-  password: "namlo2026",
+  username: process.env.REACT_APP_DEMO_USERNAME,
+  password: process.env.REACT_APP_DEMO_PASSWORD,
 };
+
+const hasCredentials = Boolean(CREDENTIALS.username && CREDENTIALS.password);
 
 const AuthContext = createContext(null);
 
@@ -29,6 +33,10 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = (username, password) => {
+    if (!hasCredentials) {
+      setError("Login is not configured. Set REACT_APP_DEMO_USERNAME and REACT_APP_DEMO_PASSWORD in .env");
+      return false;
+    }
     if (
       username.trim() === CREDENTIALS.username &&
       password.trim() === CREDENTIALS.password
@@ -48,7 +56,20 @@ export function AuthProvider({ children }) {
     return false;
   };
 
+  // External cleanup hook (set by RideProvider via window.__namlo_onLogout).
+  // Avoids a circular import between AuthContext and RideContext.
+  const runLogoutCleanup = () => {
+    try {
+      if (typeof window !== "undefined" && typeof window.__namlo_onLogout === "function") {
+        window.__namlo_onLogout();
+      }
+    } catch (e) {
+      console.warn("Logout cleanup hook failed:", e);
+    }
+  };
+
   const logout = () => {
+    runLogoutCleanup();
     setUser(null);
     setError("");
     // Clear from localStorage

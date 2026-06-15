@@ -4,14 +4,31 @@
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
 const USE_MOCK_API = true; // Set to false if you have a real API
 
-// Local storage fallback
+// Local storage fallback. Wrapped in try/catch because the value may be
+// corrupted (Safari private-mode quota errors, partial writes, manual edits).
+// Returns [] instead of throwing so callers don't crash the whole app.
 const getLocalHistory = () => {
-  const history = localStorage.getItem('rideHistory');
-  return history ? JSON.parse(history) : [];
+  try {
+    const history = localStorage.getItem('rideHistory');
+    if (!history) return [];
+    const parsed = JSON.parse(history);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.warn('rideHistory unreadable, clearing:', e);
+    try { localStorage.removeItem('rideHistory'); } catch (_) {}
+    return [];
+  }
 };
 
 const saveLocalHistory = (history) => {
-  localStorage.setItem('rideHistory', JSON.stringify(history));
+  try {
+    localStorage.setItem('rideHistory', JSON.stringify(history));
+    return true;
+  } catch (e) {
+    // Quota exceeded or disabled storage — log and bail rather than crash.
+    console.warn('Failed to persist rideHistory:', e);
+    return false;
+  }
 };
 
 export const rideHistoryApi = {
@@ -64,7 +81,7 @@ export const rideHistoryApi = {
       saveLocalHistory(history);
       return newRide;
     }
-    
+
     try {
       const response = await fetch(`${API_BASE_URL}/rides`, {
         method: 'POST',

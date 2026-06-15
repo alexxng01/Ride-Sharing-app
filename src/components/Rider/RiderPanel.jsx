@@ -2,6 +2,7 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MapPin, Navigation, X, CheckCircle, Clock, DollarSign, Car, Eye, ArrowUp, ArrowDown, Search, ArrowRight, Map, ChevronRight, Home, Building, Compass, Crosshair, Navigation2, History, Star, Loader } from "lucide-react";
+import toast from "react-hot-toast";
 import { useRide } from "../../store/RideContext";
 import { RIDE_STATUS, RIDE_STATUS_LABELS, TERMINAL_STATES, calcDistance, calcFare } from "../../lib/rideStates";
 
@@ -136,7 +137,11 @@ function DriverETADisplay({ distanceKm, etaMinutes, etaSeconds, isEnRoute }) {
 }
 
 export default function RiderPanel() {
-  const { ride, requestRide, cancelRide, clearRide, driverPosition, navStats, subscribeToPosition } = useRide();
+  const {
+    ride, requestRide, cancelRide, clearRide, driverPosition, navStats,
+    subscribeToPosition,
+    mapSelectedPickup, mapSelectedDropoff, resetMapSelection,
+  } = useRide();
 
   // Pickup is always the rider's live GPS location
   const [pickupCoords, setPickupCoords]     = useState(null);
@@ -159,6 +164,7 @@ export default function RiderPanel() {
       setPickupLabel("GPS not available");
       // Fallback to Kathmandu centre
       setPickupCoords({ lat: 27.7172, lng: 85.3240 });
+      toast.error("GPS unavailable — using Kathmandu centre as fallback.");
       return;
     }
 
@@ -169,11 +175,20 @@ export default function RiderPanel() {
         setPickupLabel(findNearestLocationName(coords.lat, coords.lng));
         setLocationStatus("ok");
       },
-      () => {
+      (err) => {
         setLocationStatus("error");
         setPickupLabel("Location unavailable");
         // Fallback to Kathmandu centre
         setPickupCoords({ lat: 27.7172, lng: 85.3240 });
+        // Inform the user — silent fallback was a common source of "my pickup
+        // is in the wrong place" support tickets.
+        if (err && err.code === err.PERMISSION_DENIED) {
+          toast.error("Location permission denied. Using Kathmandu centre — enable location in your browser for accurate pickup.");
+        } else if (err && err.code === err.TIMEOUT) {
+          toast.error("Location request timed out. Using Kathmandu centre as fallback.");
+        } else {
+          toast.error("Couldn't get your location. Using Kathmandu centre as fallback.");
+        }
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
@@ -202,6 +217,36 @@ export default function RiderPanel() {
     }
   }, [subscribeToPosition]);
 
+  // ── Sync map-selected dropoff into the booking form ──────────────────────────
+  // Map-tab toolbar writes into RideContext.mapSelectedDropoff; when it changes,
+  // bring it into our local form state so the rider can review and book.
+  useEffect(() => {
+    if (!mapSelectedDropoff) return;
+    const lat = Number(mapSelectedDropoff.lat);
+    const lng = Number(mapSelectedDropoff.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    // Try to find a known destination name within ~1km; otherwise show coords.
+    let matchedName = null;
+    for (const [name, data] of Object.entries(KTM_VALLEY_LOCATIONS)) {
+      const dKm = calcDistance({ lat, lng }, data);
+      if (Number.isFinite(dKm) && dKm < 1) { matchedName = name; break; }
+    }
+    setDropoffCoords(mapSelectedDropoff);
+    setDropoff(matchedName || `${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+  }, [mapSelectedDropoff]);
+
+  // ── Map-selected pickup overrides GPS pickup ─────────────────────────────────
+  useEffect(() => {
+    if (!mapSelectedPickup) return;
+    const lat = Number(mapSelectedPickup.lat);
+    const lng = Number(mapSelectedPickup.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    setPickupCoords(mapSelectedPickup);
+    setPickupLabel(findNearestLocationName(lat, lng));
+    setLocationStatus("ok");
+  }, [mapSelectedPickup]);
+
   // ── Dropoff selection ────────────────────────────────────────────────────────
   const handleDropoffChange = (e) => {
     const value = e.target.value;
@@ -225,6 +270,9 @@ export default function RiderPanel() {
     if (!pickupCoords || !dropoffCoords) return;
     await requestRide(pickupCoords, dropoffCoords);
     saveToRecent(dropoff);
+    // Once the ride is booked, the "set on map" preview is no longer useful —
+    // the booking now drives pickup/dropoff via Firebase.
+    resetMapSelection();
   };
 
   const isTerminal = ride && TERMINAL_STATES.has(ride.status);

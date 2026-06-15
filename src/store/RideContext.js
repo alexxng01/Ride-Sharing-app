@@ -33,6 +33,10 @@ export function RideProvider({ children }) {
   const [routeData, setRouteData] = useState(null);
   const [navStats, setNavStats] = useState(null);
   const [mapSelectionMode, setMapSelectionMode] = useState(null);
+  // Coords picked by clicking the map. Distinct from ride.pickup/dropoff so
+  // the user can preview a location before committing it to the booking form.
+  const [mapSelectedPickup,  setMapSelectedPickup]  = useState(null);
+  const [mapSelectedDropoff, setMapSelectedDropoff] = useState(null);
   const [nearbyRides, setNearbyRides] = useState([]);
   const [isDriverNearby, setIsDriverNearby] = useState(false);
   const [driverDistanceToPickup, setDriverDistanceToPickup] = useState(null);
@@ -106,12 +110,20 @@ export function RideProvider({ children }) {
     return `${distanceKm.toFixed(1)}km`;
   }, []);
 
+  // Throttle generation so we don't rebuild 3 rides on every GPS tick (every
+  // ~1s during animation). 8s keeps the driver panel usable on low-end phones
+  // without making nearby requests feel stale.
+  const lastNearbyGenRef = useRef(0);
   const generateNearbyRides = useCallback((currentDriverPos) => {
     if (!currentDriverPos) {
       setNearbyRides([]);
       setIsDriverNearby(false);
       return;
     }
+
+    const now = Date.now();
+    if (now - lastNearbyGenRef.current < 8000) return;
+    lastNearbyGenRef.current = now;
 
     const mockRides = [];
     const baseKtmCoord = { lat: 27.7172, lng: 85.3240 };
@@ -134,9 +146,11 @@ export function RideProvider({ children }) {
       };
 
       const distanceToPickup = calcDistance(currentDriverPos, pickup);
+      if (!Number.isFinite(distanceToPickup)) continue;
 
       if (distanceToPickup <= MAX_DRIVER_DISTANCE_KM) {
         const distance = calcDistance(pickup, dropoff);
+        if (!Number.isFinite(distance)) continue;
         mockRides.push({
           id: uuid(),
           pickup,
@@ -199,9 +213,24 @@ export function RideProvider({ children }) {
     }
   }, []);
 
+  // Format a coord pair safely; returns "—" if either is missing/non-numeric.
+  const formatCoord = (c) => {
+    const lat = Number(c?.lat ?? c?.latitude);
+    const lng = Number(c?.lng ?? c?.longitude);
+    if (!isFinite(lat) || !isFinite(lng)) return "—";
+    return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+  };
+
   const persistRide = useCallback(async (rideData) => {
     if (!isMounted.current) return;
+    if (!rideData) {
+      console.warn("persistRide called with no rideData; skipping.");
+      return;
+    }
 
+    // Guard against malformed rides (e.g. attacker wrote partial state to
+    // the world-readable Firebase path). Without this, terminal transitions
+    // crash with "Cannot read properties of undefined (reading 'toFixed')".
     const historyEntry = {
       rideId:      rideData.id,
       riderId:     rideData.riderId,
@@ -209,41 +238,85 @@ export function RideProvider({ children }) {
       driverName:  rideData.driverName  || "N/A",
       vehicleType: rideData.vehicleType || "N/A",
       plate:       rideData.plate       || "N/A",
-      pickup:      `${rideData.pickup.lat.toFixed(4)}, ${rideData.pickup.lng.toFixed(4)}`,
-      dropoff:     `${rideData.dropoff.lat.toFixed(4)}, ${rideData.dropoff.lng.toFixed(4)}`,
+      pickup:      formatCoord(rideData.pickup),
+      dropoff:     formatCoord(rideData.dropoff),
       status:      rideData.status,
-      fare:        rideData.fare,
-      distance:    rideData.distance,
-      duration:    rideData.duration || 0,
-      createdAt:   rideData.createdAt,
+      fare:        Number(rideData.fare)     || 0,
+      distance:    Number(rideData.distance) || 0,
+      duration:    Number(rideData.duration) || 0,
+      createdAt:   rideData.createdAt || new Date().toISOString(),
       completedAt: rideData.status === RIDE_STATUS.COMPLETED ? new Date().toISOString() : null,
     };
 
     setPendingHistoryUpdates(prev => [...prev, historyEntry]);
   }, []);
 
-  const processPendingUpdates = useCallback(async () => {
-    const updates = [...pendingHistoryUpdates];
-    setPendingHistoryUpdates([]);
+  // Max times a single failed entry is re-queued. After this, we drop it
+  // (with a toast) so a permanently-broken write can't loop forever and
+  // spam "Ride saved to history!" toasts on every iteration.
+  const MAX_PERSIST_RETRIES = 3;
+  // rideId -> retry count, kept in a ref to avoid re-renders.
+  const persistRetriesRef = useRef(new Map());
+  // Re-entry guard: prevents the pending-updates useEffect from triggering
+  // overlapping runs of processPendingUpdates. Without this, async state
+  // updates in the for loop can re-enter the effect and (combined with the
+  // failed-entry re-queue) hit React's "Maximum update depth" guard.
+  const processingPendingRef = useRef(false);
 
-    for (const rideData of updates) {
-      try {
-        await rideHistoryApi.create(rideData);
-        if (isMounted.current) {
-          toast.success("Ride saved to history!", { icon: "📜" });
+  // Stable ref to the latest processPendingUpdates so the useEffect below
+  // can call it without having it in its deps array (which would re-fire
+  // the effect on every identity change of the callback).
+  const processPendingUpdatesRef = useRef(null);
+
+  const processPendingUpdates = useCallback(async () => {
+    if (processingPendingRef.current) return; // re-entry guard
+    processingPendingRef.current = true;
+
+    try {
+      const updates = [...pendingHistoryUpdates];
+      if (updates.length === 0) return;
+      setPendingHistoryUpdates([]);
+
+      for (const rideData of updates) {
+        const key = rideData.rideId || rideData.id;
+        const tries = (key && persistRetriesRef.current.get(key)) || 0;
+
+        if (key && tries >= MAX_PERSIST_RETRIES) {
+          console.warn(`Dropping ride ${key} after ${tries} failed persists.`);
+          persistRetriesRef.current.delete(key);
+          if (isMounted.current) {
+            toast.error("Couldn't save ride to history. Skipped after multiple attempts.");
+          }
+          continue;
         }
-      } catch (e) {
-        console.warn("History persist failed:", e);
-        if (isMounted.current) {
-          setPendingHistoryUpdates(prev => [...prev, rideData]);
+
+        try {
+          await rideHistoryApi.create(rideData);
+          if (key) persistRetriesRef.current.delete(key);
+          if (isMounted.current) {
+            toast.success("Ride saved to history!", { icon: "📜" });
+          }
+        } catch (e) {
+          console.warn("History persist failed:", e);
+          if (isMounted.current && key) {
+            persistRetriesRef.current.set(key, tries + 1);
+            // Re-queue directly here, but only after this run finishes
+            // (handled below by re-queuing outside the loop).
+            setPendingHistoryUpdates(prev => [...prev, rideData]);
+          }
         }
       }
-    }
 
-    if (updates.length > 0 && isMounted.current) {
-      await loadHistory(true);
+      if (updates.length > 0 && isMounted.current) {
+        await loadHistory(true);
+      }
+    } finally {
+      processingPendingRef.current = false;
     }
   }, [pendingHistoryUpdates, loadHistory]);
+
+  // Keep ref pointing at the latest version of processPendingUpdates.
+  useEffect(() => { processPendingUpdatesRef.current = processPendingUpdates; }, [processPendingUpdates]);
 
   const startRideTimeout = useCallback((rideData) => {
     if (rideTimeoutTimer.current) {
@@ -348,7 +421,7 @@ export function RideProvider({ children }) {
       moveInterval.current = null;
     }
 
-    if (!waypoints?.length) {
+    if (!Array.isArray(waypoints) || waypoints.length === 0) {
       onDone?.();
       return;
     }
@@ -366,6 +439,9 @@ export function RideProvider({ children }) {
         waypoints.length - 1
       );
       const pos = waypoints[idx];
+      if (!pos || !Number.isFinite(Number(pos?.lat)) || !Number.isFinite(Number(pos?.lng))) {
+        return; // skip bad waypoints rather than crash
+      }
       await updatePos(pos);
 
       if (Math.abs(t - lastSentT) > 0.1) {
@@ -390,6 +466,15 @@ export function RideProvider({ children }) {
       moveInterval.current = null;
     }
 
+    if (!from || !to) {
+      // Defensive: Firebase can return a null ride mid-flight, and interpolate()
+      // returns null for malformed coords. Skip the animation rather than
+      // throw inside the interval (which would spam the console forever).
+      console.warn("animateMoveOptimized: missing from/to, skipping");
+      onDone?.();
+      return;
+    }
+
     let step = 0;
     const startTime = Date.now();
 
@@ -398,6 +483,7 @@ export function RideProvider({ children }) {
       const elapsed = Date.now() - startTime;
       const t = Math.min(elapsed / totalMs, 1);
       const pos = interpolate(from, to, t);
+      if (!pos) return; // invalid coords — wait for next tick
       await updatePos(pos);
       if (t >= 1) {
         if (moveInterval.current) {
@@ -439,13 +525,59 @@ export function RideProvider({ children }) {
   }, []);
 
   useEffect(() => {
+    // Use the ref so we don't list the function in deps; otherwise the
+    // effect re-fires every time processPendingUpdates gets a new identity
+    // (which happens whenever pendingHistoryUpdates changes — redundant
+    // with the first dep and a known cause of infinite re-render warnings).
     if (pendingHistoryUpdates.length > 0 && !historyLoading) {
-      processPendingUpdates();
+      processPendingUpdatesRef.current?.();
     }
-  }, [pendingHistoryUpdates, historyLoading, processPendingUpdates]);
+  }, [pendingHistoryUpdates, historyLoading]);
+
+  // Declared early so the subscription useEffect below can reference `reset`
+  // in its deps array without hitting a TDZ ReferenceError. These only read
+  // refs and call setState — safe to call any time after mount.
+
+  const resetMapSelection = useCallback(() => {
+    setMapSelectionMode(null);
+    setMapSelectedPickup(null);
+    setMapSelectedDropoff(null);
+  }, []);
+
+  // Full reset — called by AuthContext on logout so the next user/session
+  // doesn't inherit the previous user's ride, history, or pending writes.
+  const reset = useCallback(() => {
+    if (moveInterval.current) { clearInterval(moveInterval.current); moveInterval.current = null; }
+    clearTimeout(noDriverTimer.current);
+    clearRideTimeout();
+    persistRetriesRef.current.clear();
+    setRide(null);
+    setRole(null);
+    setHistory([]);
+    setHistoryLoading(false);
+    setLastHistoryUpdate(null);
+    setPendingHistoryUpdates([]);
+    setRouteData(null);
+    setNavStats(null);
+    setMapSelectionMode(null);
+    setMapSelectedPickup(null);
+    setMapSelectedDropoff(null);
+    setNearbyRides([]);
+    setIsDriverNearby(false);
+    setDriverDistanceToPickup(null);
+    driverPositionRef.current = null;
+    setDriverPosition(null);
+  }, [clearRideTimeout]);
 
   useEffect(() => {
     isMounted.current = true;
+
+    // Register the logout cleanup hook so AuthContext.logout() can wipe
+    // ride state without a circular import. Lives on window because both
+    // providers mount at the app root.
+    if (typeof window !== "undefined") {
+      window.__namlo_onLogout = reset;
+    }
 
     const rideDbRef = ref(db, "currentRide");
     const posDbRef = ref(db, "driverPosition");
@@ -500,8 +632,11 @@ export function RideProvider({ children }) {
         clearTimeout(throttleTimeout.current);
       }
       positionListeners.current.clear();
+      if (typeof window !== "undefined") {
+        delete window.__namlo_onLogout;
+      }
     };
-  }, [notifyPositionListeners, initializeNavStats, startRideTimeout, clearRideTimeout, generateNearbyRides]);
+  }, [notifyPositionListeners, initializeNavStats, startRideTimeout, clearRideTimeout, generateNearbyRides, reset]);
 
   useEffect(() => {
     if (ride && TERMINAL_STATES.has(ride.status)) {
@@ -740,8 +875,19 @@ export function RideProvider({ children }) {
     setRouteData(null);
     setNavStats(null);
     setRide(null);
-    await remove(ref(db, "currentRide"));
-    await remove(ref(db, "driverPosition"));
+
+    // Clear the DB best-effort. If Firebase rejects (network, permissions),
+    // we still want local state cleared and the user to see a toast —
+    // otherwise "Clear" appears to do nothing and the modal feels stuck.
+    try {
+      await Promise.allSettled([
+        remove(ref(db, "currentRide")),
+        remove(ref(db, "driverPosition")),
+      ]);
+    } catch (e) {
+      console.warn("clearRide: failed to remove from DB:", e);
+      toast.error("Local ride cleared. Server sync will retry.");
+    }
   }, [clearRideTimeout]);
 
   const subscribeToPosition = useCallback((listener) => {
@@ -763,14 +909,37 @@ export function RideProvider({ children }) {
   }, [loadHistory]);
 
   const clearHistory = useCallback(async () => {
-    if (window.confirm("Are you sure you want to clear all history?")) {
-      setHistory([]);
-      setPendingHistoryUpdates([]);
-      toast.success("History cleared locally");
+    if (!window.confirm("Are you sure you want to clear all history?")) return;
+
+    // Optimistic local clear so the UI updates immediately, regardless of
+    // whether the API/localStorage call succeeds.
+    setHistory([]);
+    setPendingHistoryUpdates([]);
+    persistRetriesRef.current.clear();
+
+    try {
+      await rideHistoryApi.clearAll();
+      toast.success("History cleared");
+    } catch (e) {
+      console.warn("clearAll failed, but local state was already cleared:", e);
+      toast.error("Cleared locally — server sync failed.");
     }
   }, []);
 
-  const handleMapLocationClick = useCallback((coords) => {}, []);
+  // Called when the user clicks the map. Dispatches based on the current
+  // selection mode set by the "Set Pickup"/"Set Dropoff" buttons in RideMap.
+  const handleMapLocationClick = useCallback((coords) => {
+    if (!coords) return;
+    const lat = Number(coords.lat ?? coords.latitude);
+    const lng = Number(coords.lng ?? coords.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    const point = { lat, lng };
+
+    if (mapSelectionMode === "pickup")  setMapSelectedPickup(point);
+    if (mapSelectionMode === "dropoff") setMapSelectedDropoff(point);
+    // Always clear mode after a click so the user can resume normal panning.
+    setMapSelectionMode(null);
+  }, [mapSelectionMode]);
 
   const isRideActive = ride && [RIDE_STATUS.ACCEPTED, RIDE_STATUS.ARRIVED, RIDE_STATUS.ACTIVE].includes(ride?.status);
 
@@ -808,6 +977,10 @@ export function RideProvider({ children }) {
     getFormattedDistance,
     MAX_DRIVER_DISTANCE_KM,
     MIN_DRIVER_DISTANCE_KM,
+    mapSelectedPickup,
+    mapSelectedDropoff,
+    resetMapSelection,
+    reset,
   };
 
   return (

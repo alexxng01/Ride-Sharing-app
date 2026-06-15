@@ -3,14 +3,27 @@ import { initializeApp } from "firebase/app";
 import { getDatabase } from "firebase/database";
 
 const firebaseConfig = {
-  apiKey:            process.env.REACT_APP_FIREBASE_API_KEY             || "AIzaSyBBgsfQCWtr_-X1uezuYe8UoRQhDurA3Zs",
-  authDomain:        process.env.REACT_APP_FIREBASE_AUTH_DOMAIN         || "web-app-ea4de.firebaseapp.com",
-  databaseURL:       process.env.REACT_APP_FIREBASE_DATABASE_URL        || "https://web-app-ea4de-default-rtdb.firebaseio.com",
-  projectId:         process.env.REACT_APP_FIREBASE_PROJECT_ID          || "web-app-ea4de",
-  storageBucket:     process.env.REACT_APP_FIREBASE_STORAGE_BUCKET      || "web-app-ea4de.firebasestorage.app",
-  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID || "219849352649",
-  appId:             process.env.REACT_APP_FIREBASE_APP_ID              || "1:219849352649:web:f14c93058ffd8feaebb418",
+  apiKey:            process.env.REACT_APP_FIREBASE_API_KEY,
+  authDomain:        process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
+  databaseURL:       process.env.REACT_APP_FIREBASE_DATABASE_URL,
+  projectId:         process.env.REACT_APP_FIREBASE_PROJECT_ID,
+  storageBucket:     process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
+  appId:             process.env.REACT_APP_FIREBASE_APP_ID,
 };
+
+const missingKeys = Object.entries(firebaseConfig)
+  .filter(([, v]) => !v)
+  .map(([k]) => k);
+
+if (missingKeys.length > 0) {
+  // Don't initialize with partial config — fail loudly so the developer
+  // knows to populate .env rather than shipping a broken build.
+  throw new Error(
+    `Firebase config missing env vars: ${missingKeys.join(", ")}. ` +
+    `Copy .env.example to .env and fill in the values.`
+  );
+}
 
 const app = initializeApp(firebaseConfig);
 export const db = getDatabase(app);

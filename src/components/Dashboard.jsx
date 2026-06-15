@@ -14,7 +14,7 @@ import { useRide } from "../store/RideContext";
 import { RIDE_STATUS } from "../lib/rideStates";
 import RideMap from "./Map/RideMap";
 import RiderPanel from "./Rider/RiderPanel";
-import DriverPanel from "./Driver/DriverPanel";
+import DriverPanel, { DraggablePaymentModal } from "./Driver/DriverPanel";
 import HistoryPanel from "./History/HistoryPanel";
 
 // ── Service Card Component ─────────────────────────────────────────────
@@ -225,7 +225,7 @@ function ScrollButtons({ containerRef, color = "brand" }) {
 // ── Main Dashboard ────────────────────────────────────────────────────
 export default function Dashboard() {
   const { user, logout } = useAuth();
-  const { ride, handleMapLocationClick, mapSelectionMode, setMapSelectionMode } = useRide();
+  const { ride, handleMapLocationClick, mapSelectionMode, setMapSelectionMode, clearRide } = useRide();
   const [activeTab, setActiveTab] = useState("home");
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showMap, setShowMap] = useState(false);
@@ -267,7 +267,15 @@ export default function Dashboard() {
   const showMapInSidebar = showMap && (activeTab === "rider" || activeTab === "driver");
 
   // ── Panel content (sidebar panels only — NOT for map tab) ───────────
-  const PanelContent = () => {
+  // CRITICAL: must be a regular function (not a component declared inline).
+  // If we declare it as `const PanelContent = () => ...` and call it as
+  // `<PanelContent />`, it gets a new identity on every Dashboard render.
+  // React then treats the rendered tree as a different component type and
+  // unmounts/remounts it on every state update — which is what caused the
+  // "Maximum update depth exceeded" loop on the History tab (HistoryPanel's
+  // mount effect called loadHistory → setHistory → Dashboard re-render →
+  // new PanelContent ref → unmount/remount → repeat forever).
+  const renderPanelContent = () => {
     if (activeTab === "home") {
       return (
         <div className="relative h-full">
@@ -575,7 +583,7 @@ export default function Dashboard() {
               `}
             >
               <div className="flex-1 overflow-hidden">
-                <PanelContent />
+                {renderPanelContent()}
               </div>
             </div>
 
@@ -611,7 +619,7 @@ export default function Dashboard() {
             // Mobile rider/driver with map toggle on: panel on top, map strip below
             <>
               <div className="flex-1 overflow-hidden min-h-0">
-                <PanelContent />
+                {renderPanelContent()}
               </div>
               <div className="h-64 flex-shrink-0 overflow-hidden border-t border-dark-800 p-3">
                 <div className="h-full rounded-xl overflow-hidden">
@@ -625,7 +633,7 @@ export default function Dashboard() {
           ) : (
             // Mobile default: just the panel
             <div className="flex-1 overflow-hidden">
-              <PanelContent />
+              {renderPanelContent()}
             </div>
           )}
         </div>
@@ -652,6 +660,11 @@ export default function Dashboard() {
           </button>
         ))}
       </div>
+
+      {/* ── Payment modal (rendered globally so tab switches can't strand it) ─ */}
+      {ride?.status === RIDE_STATUS.COMPLETED && (
+        <DraggablePaymentModal ride={ride} onClear={clearRide} />
+      )}
     </div>
   );
 }

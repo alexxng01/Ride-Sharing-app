@@ -74,7 +74,7 @@ function HistoryCard({ item, index }) {
 
       {item.rideId && (
         <div className="text-xs text-dark-600 font-mono">
-          #{item.rideId.substring(0, 8)}
+          #{String(item.rideId).slice(0, 8)}
         </div>
       )}
     </motion.div>
@@ -109,6 +109,7 @@ export default function HistoryPanel() {
   // FIX: empty dep array [] makes this created once and never re-created.
   //      All mutable values are read from refs, not closed-over state.
   const handleLoadHistory = useCallback(async (force = false) => {
+    // Clear any pending error-clear timer so repeated clicks don't stack.
     if (fetchTimeoutRef.current) {
       clearTimeout(fetchTimeoutRef.current);
       fetchTimeoutRef.current = null;
@@ -117,17 +118,17 @@ export default function HistoryPanel() {
     const now              = Date.now();
     const timeSinceLastFetch = now - lastFetchTime.current;
 
-    // Rate-limit: 5 seconds between non-forced fetches
+    // Rate-limit: 5 seconds between non-forced fetches. Force-clicks bypass.
     if (!force && timeSinceLastFetch < 5000 && lastFetchTime.current !== 0) {
       const waitTime = 5000 - timeSinceLastFetch;
       if (isMounted.current) {
         setError(`Please wait ${Math.ceil(waitTime / 1000)}s before refreshing`);
       }
+      // Only clear the error banner after the cooldown — do NOT auto-refetch,
+      // which used to chain timeouts on every click and flicker the UI.
       fetchTimeoutRef.current = setTimeout(() => {
-        if (isMounted.current) {
-          setError(null);
-          handleLoadHistory(false);
-        }
+        fetchTimeoutRef.current = null;
+        if (isMounted.current) setError(null);
       }, waitTime);
       return;
     }
@@ -161,8 +162,8 @@ export default function HistoryPanel() {
   }, []); // ← stable forever; all mutable values read from refs
 
   // ── Initial load on mount only ────────────────────────────────────────────
-  // FIX: handleLoadHistory is now stable (empty deps), so this effect
-  //      runs exactly once on mount and never again.
+  // handleLoadHistory is stable (empty deps), so this effect runs once on
+  // mount and never again. We don't list it in deps to be explicit about that.
   useEffect(() => {
     isMounted.current = true;
 
@@ -179,7 +180,7 @@ export default function HistoryPanel() {
       isMounted.current = false;
       if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current);
     };
-  }, [handleLoadHistory]); // stable ref — runs once
+  }, []); // ← mount only; handleLoadHistory is stable and read at call time
 
   // ── Visibility change — log only, no auto-fetch ───────────────────────────
   useEffect(() => {

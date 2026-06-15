@@ -161,14 +161,23 @@ export function randomKtmCoord() {
   };
 }
 
+// Accept both {lat, lng} and {latitude, longitude} shapes; also bare arrays.
+// Returns NaN if either point is missing or non-numeric (callers should
+// defensively check, e.g. via Number.isFinite before rendering).
 export function calcDistance(a, b) {
+  const aLat = Number(a?.lat ?? a?.latitude ?? a?.[0]);
+  const aLng = Number(a?.lng ?? a?.longitude ?? a?.[1]);
+  const bLat = Number(b?.lat ?? b?.latitude ?? b?.[0]);
+  const bLng = Number(b?.lng ?? b?.longitude ?? b?.[1]);
+  if (![aLat, aLng, bLat, bLng].every(Number.isFinite)) return NaN;
+
   const R = 6371;
-  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
-  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const dLat = ((bLat - aLat) * Math.PI) / 180;
+  const dLng = ((bLng - aLng) * Math.PI) / 180;
   const x =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((a.lat * Math.PI) / 180) *
-      Math.cos((b.lat * Math.PI) / 180) *
+    Math.cos((aLat * Math.PI) / 180) *
+      Math.cos((bLat * Math.PI) / 180) *
       Math.sin(dLng / 2) *
       Math.sin(dLng / 2);
   return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
@@ -181,9 +190,14 @@ export function calcFare(distanceKm) {
 }
 
 export function interpolate(start, end, t) {
+  const sLat = Number(start?.lat ?? start?.latitude);
+  const sLng = Number(start?.lng ?? start?.longitude);
+  const eLat = Number(end?.lat ?? end?.latitude);
+  const eLng = Number(end?.lng ?? end?.longitude);
+  if (![sLat, sLng, eLat, eLng].every(Number.isFinite)) return null;
   return {
-    lat: start.lat + (end.lat - start.lat) * t,
-    lng: start.lng + (end.lng - start.lng) * t,
+    lat: sLat + (eLat - sLat) * t,
+    lng: sLng + (eLng - sLng) * t,
   };
 }
 

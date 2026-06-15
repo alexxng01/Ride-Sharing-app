@@ -173,19 +173,37 @@ function ProgressSteps({ status }) {
 }
 
 // ── Draggable Payment Modal ──────────────────────────────────────────────────
-function DraggablePaymentModal({ ride, onClear }) {
+// Rendered at the Dashboard level (not inside DriverPanel) so it survives tab
+// switches — otherwise users could escape it by tapping another tab and lose
+// the only way to clear a completed ride.
+export function DraggablePaymentModal({ ride, onClear }) {
   const [paid, setPaid] = useState(false);
 
   // Drag state
   const modalRef  = useRef(null);
   const dragging  = useRef(false);
   const offset    = useRef({ x: 0, y: 0 });
-  const [pos, setPos] = useState({ x: 16, y: null }); // null y = use bottom:16 initially
+  // y === null means "use bottom:16" so the modal initially hugs the bottom
+  // of the viewport without requiring the parent to know its height.
+  const [pos, setPos] = useState({ x: 16, y: null });
 
   // ── pointer helpers ──
   const getXY = (e) =>
     e.touches ? { x: e.touches[0].clientX, y: e.touches[0].clientY }
               : { x: e.clientX,            y: e.clientY            };
+
+  // Clamp the modal into the viewport given its current size. Used on drag
+  // and on resize (so the modal can't get stuck off-screen when the window
+  // shrinks).
+  const clampToViewport = useCallback((nextPos) => {
+    const el = modalRef.current;
+    const w  = el?.offsetWidth  || 0;
+    const h  = el?.offsetHeight || 0;
+    return {
+      x: Math.max(0, Math.min(window.innerWidth  - w, nextPos.x)),
+      y: Math.max(0, Math.min(window.innerHeight - h, nextPos.y)),
+    };
+  }, []);
 
   const onDragStart = (e) => {
     // Don't start drag on interactive children
@@ -201,23 +219,32 @@ function DraggablePaymentModal({ ride, onClear }) {
     const onMove = (e) => {
       if (!dragging.current) return;
       const { x, y } = getXY(e);
-      const newX = Math.max(0, Math.min(window.innerWidth  - (modalRef.current?.offsetWidth  || 0), x - offset.current.x));
-      const newY = Math.max(0, Math.min(window.innerHeight - (modalRef.current?.offsetHeight || 0), y - offset.current.y));
-      setPos({ x: newX, y: newY });
+      setPos(clampToViewport({ x: x - offset.current.x, y: y - offset.current.y }));
     };
     const onUp = () => { dragging.current = false; };
+
+    // On resize: re-clamp existing position so a shrunken viewport can't
+    // strand the modal off-screen (which used to require a full page reload).
+    const onResize = () => {
+      setPos((prev) => {
+        if (prev.y === null) return prev; // still in bottom-anchored mode
+        return clampToViewport(prev);
+      });
+    };
 
     window.addEventListener("mousemove",  onMove);
     window.addEventListener("mouseup",    onUp);
     window.addEventListener("touchmove",  onMove, { passive: false });
     window.addEventListener("touchend",   onUp);
+    window.addEventListener("resize",     onResize);
     return () => {
       window.removeEventListener("mousemove",  onMove);
       window.removeEventListener("mouseup",    onUp);
       window.removeEventListener("touchmove",  onMove);
       window.removeEventListener("touchend",   onUp);
+      window.removeEventListener("resize",     onResize);
     };
-  }, []);
+  }, [clampToViewport]);
 
   return (
     <div
@@ -318,12 +345,21 @@ function DraggablePaymentModal({ ride, onClear }) {
             </motion.div>
           )}
 
-          <button
-            onClick={onClear}
-            className="w-full py-2.5 text-xs text-dark-400 hover:text-dark-200 transition-colors bg-dark-800/50 rounded-xl border border-dark-700"
-          >
-            Clear &amp; wait for next ride
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPos({ x: 16, y: null })}
+              className="flex-1 py-2.5 text-xs text-dark-400 hover:text-dark-200 transition-colors bg-dark-800/50 rounded-xl border border-dark-700"
+              title="Recenter modal"
+            >
+              ⟲ Reset position
+            </button>
+            <button
+              onClick={onClear}
+              className="flex-1 py-2.5 text-xs text-dark-400 hover:text-dark-200 transition-colors bg-dark-800/50 rounded-xl border border-dark-700"
+            >
+              Clear &amp; wait for next ride
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -571,9 +607,16 @@ export default function DriverPanel() {
             </div>
           )}
 
-          {/* ── Completed — draggable payment modal ─────────────────── */}
+          {/* ── Completed — payment modal is rendered at Dashboard ──── */}
           {isComplete && (
-            <DraggablePaymentModal ride={ride} onClear={clearRide} />
+            <div className="space-y-3 w-full">
+              <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4 text-center">
+                <CheckCircle size={28} className="text-green-400 mx-auto mb-2" />
+                <p className="text-green-300 font-bold text-sm">Ride Completed!</p>
+                <p className="text-dark-400 text-xs mt-1">Total: NPR {ride.fare} · {ride.distance} km</p>
+                <p className="text-dark-500 text-[10px] mt-2">Use the payment panel to confirm and continue.</p>
+              </div>
+            </div>
           )}
 
           {/* ── Other terminal states ─────────────────────────────────── */}
